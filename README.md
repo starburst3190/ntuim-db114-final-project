@@ -10,17 +10,20 @@
 Player 端著重於收藏與互動，而 Shop 端則是商業營運、推廣兼具。
 
 ## 使用步驟
-1. 安裝套件
+0. 進入專案的根目錄
+1. 從 backup 檔還原資料庫
+2. 按照 `.env.example` 的指示創建 `.env`
+3. 安裝套件
 ```bash
 pip install -r requirements.txt
 ```
-2. 啟用後端
+4. 啟動後端
 ```bash
-
+uvicorn backend.main:app --reload
 ```
-3. 啟用前端
+5. 啟動前端 (此步驟會自動使用瀏覽器連線至前端)
 ```bash
-
+streamlit run frontend/app.py
 ```
 
 ## 技術細節
@@ -29,13 +32,13 @@ pip install -r requirements.txt
 ```
 ntuim-db114-final-project/
 ├── backend/
-│   ├── main.py      # FastAPI
-│   └── db.py        # 連線至資料庫
+│   ├── main.py           # FastAPI
+│   └── db.py             # 連線至資料庫
 ├── frontend/
-│   └── app.py       # Streamlit
-├── .env             # 儲存環境變數 (要自己創建)
-├── .env.example     # .env 檔的範例
-├── requirements.txt # 套件清單
+│   └── app.py            # Streamlit
+├── .env                  # 儲存環境變數 (要自己創建)
+├── .env.example          # .env 檔的範例
+├── requirements.txt      # 套件清單
 └── README.md
 ```
 
