@@ -129,7 +129,7 @@ def player_dashboard():
     p_id = user['p_id']
     
     with st.sidebar:
-        st.title(f"玩家: {user['p_name']}")
+        st.title(f"歡迎回來！{user['p_name']}")
         
         # --- 優化重點：使用 option_menu ---
         # 參數說明：
