@@ -10,18 +10,17 @@ load_dotenv()
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME", "DBMS_final_project"),
     "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "password"),
+    "password": os.getenv("DB_PASSWORD", "fuck"), # 注意：假設你的密碼是 'fuck'
     "host": os.getenv("DB_HOST", "localhost"),
-    "port": os.getenv("DB_PORT", "5432")
+    "port": os.getenv("DB_PORT", "5433") # 注意：假設你的 Port 是 '5433'
 }
 
 # --- 效能優化：建立連線池 (Connection Pool) ---
-# 程式啟動時建立 1 到 20 條連線備用，不用每次都重新登入資料庫
 try:
     connection_pool = psycopg2.pool.ThreadedConnectionPool(
         minconn=1,
         maxconn=20,
-        cursor_factory=RealDictCursor, # 讓查詢結果直接變字典
+        cursor_factory=RealDictCursor, 
         **DB_CONFIG
     )
     print("Database connection pool created successfully")
@@ -31,28 +30,20 @@ except Exception as e:
 
 @contextmanager
 def get_db_connection():
-    """
-    這是一個 Context Manager。
-    使用方式: 
-    with get_db_connection() as conn:
-        ...
-    它會自動從池子拿連線，用完自動放回去 (putconn)，
-    就算發生錯誤也會確保連線被歸還，不會造成連線洩漏。
-    """
     if connection_pool is None:
         raise Exception("Connection pool is not initialized")
     
     conn = connection_pool.getconn()
     try:
         yield conn
-        conn.commit() # 預設自動 Commit，避免資料沒存進去
+        conn.commit() 
     except Exception as e:
-        conn.rollback() # 出錯就回滾
+        conn.rollback() 
         raise e
     finally:
-        connection_pool.putconn(conn) # 歸還連線
+        connection_pool.putconn(conn) 
 
-# --- User / Auth ---
+# --- User / Auth (不變) ---
 def get_player_by_email(email):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -97,7 +88,8 @@ def get_player_cards(p_id):
             """, (p_id,))
             return cur.fetchall()
 
-def get_all_cards():
+def get_all_card_names_and_ids():
+    """為了登錄卡牌功能，只回傳 ID 和名稱。"""
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute('SELECT "c_id", "c_name" FROM "CARD"')
@@ -140,7 +132,95 @@ def create_deck(p_id, d_name):
         print(e)
         return False
 
-# --- Shop Features ---
+# --- 新增：牌組組成功能 ---
+def get_deck_composition(d_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT c."c_name", dcoc."qty"
+                FROM "DECK_CONSISTS_OF_CARD" dcoc
+                JOIN "CARD" c ON dcoc."c_id" = c."c_id"
+                WHERE dcoc."d_id" = %s
+            """, (d_id,))
+            return cur.fetchall()
+
+def upsert_deck_card(d_id, c_id, qty):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # 檢查是否已存在，並更新數量
+                cur.execute('SELECT 1 FROM "DECK_CONSISTS_OF_CARD" WHERE "d_id"=%s AND "c_id"=%s', (d_id, c_id))
+                if cur.fetchone():
+                    if qty > 0:
+                        cur.execute('UPDATE "DECK_CONSISTS_OF_CARD" SET "qty"=%s WHERE "d_id"=%s AND "c_id"=%s', (qty, d_id, c_id))
+                    else:
+                        # 數量為 0 時刪除
+                        cur.execute('DELETE FROM "DECK_CONSISTS_OF_CARD" WHERE "d_id"=%s AND "c_id"=%s', (d_id, c_id))
+                elif qty > 0:
+                    # 不存在且數量大於 0 時插入
+                    cur.execute('INSERT INTO "DECK_CONSISTS_OF_CARD" ("d_id", "c_id", "qty") VALUES (%s, %s, %s)', (d_id, c_id, qty))
+        return True
+    except Exception as e:
+        print(e)
+        return False
+
+# --- 核心新增：缺卡計算邏輯 ---
+def get_missing_cards_for_deck(p_id, d_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                -- DCOC: Deck Consists Of Card (牌組需求)
+                -- PHC: Player Has Card (玩家擁有)
+                SELECT
+                    c."c_name" AS "卡牌名稱",
+                    dco."qty" AS "牌組需求量",
+                    COALESCE(phc."qty", 0) AS "玩家擁有量",
+                    (dco."qty" - COALESCE(phc."qty", 0)) AS "缺少數量"
+                FROM "DECK_CONSISTS_OF_CARD" dco
+                JOIN "CARD" c ON dco."c_id" = c."c_id"
+                -- LEFT JOIN 確保即使玩家沒擁有，也能看到牌組需求
+                LEFT JOIN "PLAYER_HAS_CARD" phc 
+                    ON dco."c_id" = phc."c_id" AND phc."p_id" = %s
+                WHERE dco."d_id" = %s
+                  -- 只顯示「缺少數量」大於 0 的記錄
+                  AND (dco."qty" - COALESCE(phc."qty", 0)) > 0
+                ORDER BY "缺少數量" DESC;
+            """, (p_id, d_id))
+            return cur.fetchall()
+
+# --- 核心新增：卡牌篩選查詢 ---
+def filter_cards(c_name=None, c_type=None, c_rarity=None):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            query = """
+                SELECT 
+                    c."c_name" AS "卡牌名稱", 
+                    c."c_type" AS "類型", 
+                    c."c_rarity" AS "稀有度", 
+                    s."series_name" AS "所屬系列"
+                FROM "CARD" c
+                LEFT JOIN "SERIES" s ON c."series_id" = s."series_id"
+                WHERE 1=1
+            """
+            params = []
+            
+            # 動態建立 WHERE 條件
+            if c_name:
+                query += " AND c.\"c_name\" ILIKE %s" # ILIKE 實現大小寫不敏感搜尋
+                params.append(f'%{c_name}%')
+            if c_type:
+                query += " AND c.\"c_type\" = %s"
+                params.append(c_type)
+            if c_rarity:
+                query += " AND c.\"c_rarity\" = %s"
+                params.append(c_rarity)
+            
+            query += " ORDER BY c.\"c_name\""
+            
+            cur.execute(query, tuple(params))
+            return cur.fetchall()
+
+# --- Shop Features (不變) ---
 def get_shop_inventory(s_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -184,8 +264,52 @@ def create_event(e_name, e_format, e_date, e_time, e_size, e_round, s_id):
     except Exception as e:
         print(e)
         return False
+    
+# 修改 db.py 中的 filter_cards 函式
+def filter_cards(c_name=None, c_type=None, c_rarity=None):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            query = """
+                SELECT 
+                    c."c_name" AS "卡牌名稱", 
+                    c."c_type" AS "類型", 
+                    c."c_rarity" AS "稀有度", 
+                    s."series_name" AS "所屬系列"
+                FROM "CARD" c
+                LEFT JOIN "SERIES" s ON c."series_id" = s."series_id"
+                WHERE 1=1
+            """
+            params = []
+            
+            # 動態建立 WHERE 條件
+            if c_name:
+                query += " AND c.\"c_name\" ILIKE %s"
+                params.append(f'%{c_name}%')
+            
+            if c_type:
+                if c_type == "寶可夢":
+                    # ✅ 修正邏輯：寶可夢 = 不是 Trainer 也不是 Energy
+                    query += " AND c.\"c_type\" NOT IN ('Trainer', 'Energy')"
+                elif c_type == "訓練家":
+                    query += " AND c.\"c_type\" = 'Trainer'"
+                elif c_type == "能量":
+                    # ✅ 新增邏輯：搜尋能量卡
+                    query += " AND c.\"c_type\" = 'Energy'"
+                else:
+                    # 搜尋特定屬性 (Grass, Fire...)
+                    query += " AND c.\"c_type\" = %s"
+                    params.append(c_type)
+            
+            if c_rarity:
+                query += " AND c.\"c_rarity\" = %s"
+                params.append(c_rarity)
+            
+            query += " ORDER BY c.\"c_name\""
+            
+            cur.execute(query, tuple(params))
+            return cur.fetchall()
 
-# --- Common Features ---
+# --- Common Features (不變) ---
 def get_all_events():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
