@@ -98,7 +98,7 @@ def get_cards(p_id: int):
 @app.get("/cards")
 def get_all_cards(
     name: Optional[str] = Query(None, description="卡牌名稱關鍵字"),
-    card_type: Optional[str] = Query(None, description="卡牌類型"),
+    card_type: Optional[List[str]] = Query(None, description="卡牌類型"),
     rarity: Optional[str] = Query(None, description="稀有度")
 ):
     # 如果有任何篩選參數，則呼叫 filter_cards

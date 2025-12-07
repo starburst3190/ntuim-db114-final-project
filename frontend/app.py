@@ -128,7 +128,7 @@ def player_dashboard():
     p_id = user['p_id']
     
     with st.sidebar:
-        st.title(f"歡迎回來！{user['p_name']}")
+        st.title(f"歡迎回來，{user['p_name']}")
         
         # --- 修改：新增「卡牌查詢」選單 ---
         menu = option_menu(
@@ -146,7 +146,7 @@ def player_dashboard():
         if menu == "我的收藏":
             st.header("我的卡片")
             df = fetch_data(f"player/{p_id}/cards")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
 
             with st.expander("登錄新卡片"):
                 # 這裡的 fetch_data("cards") 會回傳精簡列表
@@ -168,12 +168,12 @@ def player_dashboard():
         elif menu == "我的牌組":
             st.header("牌組管理")
             df_decks = fetch_data(f"player/{p_id}/decks")
-            st.dataframe(df_decks, use_container_width=True)
+            st.dataframe(df_decks, width="stretch")
             
             st.subheader("建立新牌組")
             c1, c2 = st.columns([3, 1])
             new_name = c1.text_input("牌組名稱", placeholder="輸入牌組名稱")
-            if c2.button("建立", use_container_width=True):
+            if c2.button("建立", width="stretch"):
                 payload = {"p_id": p_id, "d_name": new_name}
                 if send_data("player/create_deck", payload):
                     st.success("建立成功")
@@ -194,7 +194,7 @@ def player_dashboard():
                         current_comp = fetch_data(f"deck/{sel_d_id_edit}/composition")
                         if not current_comp.empty:
                             st.caption(f"目前 {sel_deck_name_edit} 的組成:")
-                            st.dataframe(current_comp, use_container_width=True)
+                            st.dataframe(current_comp, width="stretch")
 
                         st.divider()
                         st.subheader("新增/修改卡片數量 (設為 0 刪除)")
@@ -230,7 +230,7 @@ def player_dashboard():
                                 st.success(f"{sel_deck_name_missing}：恭喜！卡牌已齊全。")
                             else:
                                 st.warning(f"{sel_deck_name_missing} 缺少以下卡牌：")
-                                st.dataframe(missing_df, use_container_width=True)
+                                st.dataframe(missing_df, width="stretch")
             else:
                 st.info("您尚未建立任何牌組。請先建立牌組！")
 
@@ -239,27 +239,44 @@ def player_dashboard():
             st.header("卡牌篩選與查詢")
             
             st.subheader("篩選條件")
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             
             search_name = col1.text_input("卡牌名稱關鍵字", placeholder="例如：Pikachu")
             
-            # 修改 app.py 中的 type_options 列表
             type_options = [
-                "", 
-                "寶可夢", 
-                "訓練家", 
-                "能量",   # ✅ 新增這個選項 (對應 db.py 的 c_type == "能量")
-                "Grass", "Fire", "Water", "Lightning", "Psychic",      #汪洋傑加油
-                "Fighting", "Darkness", "Metal", "Dragon", "Colorless" #幫我做分層
+                "", "Pokemon", "Trainer", "Energy"
             ]
+
+            rarity_options = [
+                "",
+                "Common", "Uncommon", "Rare", "Double Rare",
+                "Illustration Rare", "Special Illustration Rare", "Ultra Rare"
+            ]
+
+            pokemon_type_options = [
+                "",
+                "Grass", "Fire", "Water", "Lightning", "Psychic",
+                "Fighting", "Darkness", "Metal", "Dragon", "Colorless"
+            ]
+
+            all_pokemon_types = [t for t in pokemon_type_options if t != ""]
+
             search_type = col2.selectbox("類型", type_options, index=0)
             
-            search_rarity = col3.selectbox("稀有度", [""] + ["Common", "Uncommon", "Rare", "Double Rare", "Illustration Rare", "Special Illustration Rare", "Ultra Rare"], index=0)
+            search_rarity = col3.selectbox("稀有度", rarity_options, index=0)
+
+            pokemon_type = col4.selectbox("寶可夢屬性", pokemon_type_options, index=0, disabled=(search_type != "Pokemon"))
             
             params = {}
             if search_name: params['name'] = search_name
-            if search_type: params['card_type'] = search_type
             if search_rarity: params['rarity'] = search_rarity
+            if search_type == "Pokemon":
+                if pokemon_type:
+                    params['card_type'] = pokemon_type
+                else:
+                    params['card_type'] = all_pokemon_types
+            elif search_type:
+                params['card_type'] = search_type
 
             if st.button("執行查詢", type="primary"):
                 with st.spinner("查詢中..."):
@@ -269,24 +286,24 @@ def player_dashboard():
                         st.info("查無符合條件的卡牌。")
                     else:
                         st.success(f"找到 {len(df_results)} 張符合條件的卡牌:")
-                        st.dataframe(df_results, use_container_width=True)
+                        st.dataframe(df_results, width="stretch")
 
         elif menu == "線上商城":
             st.header("瀏覽商城")
             df = fetch_data("market")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
 
         elif menu == "賽事報名":
             st.header("賽事列表")
             df = fetch_data("events")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
 
 def shop_dashboard():
     user = st.session_state['user_info']
     s_id = user['s_id']
 
     with st.sidebar:
-        st.title(f"店家: {user['s_name']}")
+        st.title(f"歡迎回來，{user['s_name']}")
         
         menu = option_menu(
             menu_title=None,
@@ -301,7 +318,7 @@ def shop_dashboard():
         if menu == "庫存":
             st.header("庫存管理")
             df = fetch_data(f"shop/{s_id}/products")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
 
             st.divider()
             st.subheader("上架商品")

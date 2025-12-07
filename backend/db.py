@@ -10,9 +10,9 @@ load_dotenv()
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME", "DBMS_final_project"),
     "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "fuck"), # 注意：假設你的密碼是 'fuck'
+    "password": os.getenv("DB_PASSWORD", "password"),
     "host": os.getenv("DB_HOST", "localhost"),
-    "port": os.getenv("DB_PORT", "5433") # 注意：假設你的 Port 是 '5433'
+    "port": os.getenv("DB_PORT", "5432")
 }
 
 # --- 效能優化：建立連線池 (Connection Pool) ---
@@ -209,8 +209,8 @@ def filter_cards(c_name=None, c_type=None, c_rarity=None):
                 query += " AND c.\"c_name\" ILIKE %s" # ILIKE 實現大小寫不敏感搜尋
                 params.append(f'%{c_name}%')
             if c_type:
-                query += " AND c.\"c_type\" = %s"
-                params.append(c_type)
+                query += " AND c.\"c_type\" IN %s"
+                params.append(tuple(c_type))
             if c_rarity:
                 query += " AND c.\"c_rarity\" = %s"
                 params.append(c_rarity)
@@ -264,50 +264,6 @@ def create_event(e_name, e_format, e_date, e_time, e_size, e_round, s_id):
     except Exception as e:
         print(e)
         return False
-    
-# 修改 db.py 中的 filter_cards 函式
-def filter_cards(c_name=None, c_type=None, c_rarity=None):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            query = """
-                SELECT 
-                    c."c_name" AS "卡牌名稱", 
-                    c."c_type" AS "類型", 
-                    c."c_rarity" AS "稀有度", 
-                    s."series_name" AS "所屬系列"
-                FROM "CARD" c
-                LEFT JOIN "SERIES" s ON c."series_id" = s."series_id"
-                WHERE 1=1
-            """
-            params = []
-            
-            # 動態建立 WHERE 條件
-            if c_name:
-                query += " AND c.\"c_name\" ILIKE %s"
-                params.append(f'%{c_name}%')
-            
-            if c_type:
-                if c_type == "寶可夢":
-                    # ✅ 修正邏輯：寶可夢 = 不是 Trainer 也不是 Energy
-                    query += " AND c.\"c_type\" NOT IN ('Trainer', 'Energy')"
-                elif c_type == "訓練家":
-                    query += " AND c.\"c_type\" = 'Trainer'"
-                elif c_type == "能量":
-                    # ✅ 新增邏輯：搜尋能量卡
-                    query += " AND c.\"c_type\" = 'Energy'"
-                else:
-                    # 搜尋特定屬性 (Grass, Fire...)
-                    query += " AND c.\"c_type\" = %s"
-                    params.append(c_type)
-            
-            if c_rarity:
-                query += " AND c.\"c_rarity\" = %s"
-                params.append(c_rarity)
-            
-            query += " ORDER BY c.\"c_name\""
-            
-            cur.execute(query, tuple(params))
-            return cur.fetchall()
 
 # --- Common Features (不變) ---
 def get_all_events():
