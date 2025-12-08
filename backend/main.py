@@ -35,6 +35,11 @@ class RemoveDeckRequest(BaseModel):
     p_id: int
     d_id: int
 
+class JoinEventRequest(BaseModel):
+    p_id: int
+    e_id: int
+    d_id: int
+
 class AddProductRequest(BaseModel):
     s_id: int
     prod_id: int
@@ -139,6 +144,19 @@ def remove_deck(data: RemoveDeckRequest):
     if db.remove_deck(data.p_id, data.d_id):
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to remove deck")
+
+@app.get("/player/{p_id}/events")
+def get_player_events(p_id: int):
+    return db.get_player_participations_detailed(p_id)
+
+@app.post("/player/join_event")
+def join_event(data: JoinEventRequest):
+    result = db.join_event(data.p_id, data.e_id, data.d_id)
+    if result is True:
+        return {"status": "success"}
+    elif isinstance(result, dict) and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    raise HTTPException(status_code=500, detail="Failed to join event")
 
 # --- 新增：取得牌組組成 ---
 @app.get("/deck/{d_id}/composition")

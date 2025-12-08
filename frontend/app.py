@@ -88,7 +88,8 @@ def login_page():
 
     with tab1:
         role = st.radio("我是...", ["玩家 (Player)", "店家 (Shop)"], horizontal=True, key="login_role")
-        username = st.text_input("帳號", key="login_username")
+        user_label = "帳號 (Email)" if role == "玩家 (Player)" else "帳號 (店名)"
+        username = st.text_input(user_label, key="login_username")
         password = st.text_input("密碼", type="password", key="login_password")
         
         if st.button("登入", key="btn_login"):
@@ -386,12 +387,149 @@ def player_dashboard():
                 st.info("查無商品")
 
         elif menu == "賽事報名":
-            st.header("賽事列表")
-            df = fetch_data("events")
-            if not df.empty:
-                st.dataframe(df, width="stretch")
+            st.header("賽事報名中心")
+
+            size_mapping = {
+                "POD": 8,
+                "LOCAL": 16,
+                "REGIONAL": 32,
+                "MAJOR": 64
+            }
+            name_mapping = {
+                "POD": "桌邊賽", "LOCAL": "例行賽", "REGIONAL": "區域賽", "MAJOR": "旗艦賽"
+            }
+
+            # 1. 取得賽事列表
+            df_events = fetch_data("events")
+            
+            # 2. 取得玩家自己的牌組 (報名必備)
+            df_my_decks = fetch_data(f"player/{p_id}/decks")
+
+            # 3. 取得玩家已報名的賽事
+            my_participations = fetch_data(f"player/{p_id}/events")
+    
+            if not my_participations.empty and "e_id" in my_participations.columns:
+                joined_event_ids = set(my_participations["e_id"].tolist())
             else:
-                st.info("查無賽事")
+                joined_event_ids = set()
+
+            # --- 顯示已報名賽事區塊 ---
+            if not my_participations.empty:
+                st.subheader("已報名的賽事")
+                st.dataframe(
+                    my_participations,
+                    width="stretch",
+                    column_config={
+                        # 隱藏不需要給玩家看的 ID 欄位
+                        "e_id": None,
+                        "d_id": None,
+                        "p_id": None,
+                        "e_name": "活動名稱",
+                        "e_date": st.column_config.DateColumn("日期", format="YYYY-MM-DD"),
+                        "e_time": st.column_config.TimeColumn("時間", format="HH:mm"),
+                        "s_name": "舉辦店家",
+                        "d_name": "使用牌組",
+                        "e_format": "賽制"
+                    },
+                    hide_index=True
+                )
+                st.divider()
+
+            # --- 顯示所有賽事列表 ---
+            if not df_events.empty:
+                st.subheader("近期賽事")
+
+                df_events["size_limit"] = df_events["e_size"].map(size_mapping).astype(int)
+                df_events["size_display"] = df_events["e_size"].map(name_mapping)
+                df_events["occupancy_rate"] = df_events.apply(
+                    lambda row: (row["current_participants"] / row["size_limit"] * 100) if row["size_limit"] > 0 else 0,
+                    axis=1
+                )
+                df_events["status_text"] = (
+                    df_events["size_display"] + " (" + 
+                    df_events["current_participants"].astype(str) + "/" + 
+                    df_events["size_limit"].astype(str) + ")"
+                )
+                
+                # 設定表格顯示格式
+                st.dataframe(
+                    df_events,
+                    width="stretch",
+                    column_config={
+                        "e_id": None,
+                        "e_name": "活動名稱",
+                        "e_date": st.column_config.DateColumn("日期", format="YYYY-MM-DD"),
+                        "e_time": st.column_config.TimeColumn("時間", format="HH:mm"),
+                        "e_format": "賽制",
+                        "e_roundtype": "賽制輪次",
+                        "s_name": "舉辦店家",
+                        "status_text": "賽事規模 (目前/上限)",
+                        "occupancy_rate": st.column_config.ProgressColumn(
+                            "報名狀況",
+                            help="目前人數 / 規模上限",
+                            format="%.0f%%",
+                            min_value=0,
+                            max_value=100,
+                        ),
+                        "e_size": None,
+                        "current_participants": None,
+                        "size_limit": None,
+                        "size_display": None
+                    },
+                    hide_index=True
+                )
+
+                st.divider()
+
+                # --- 報名操作區 ---
+                st.subheader("立即報名")
+
+                if df_my_decks.empty:
+                    st.warning("您目前沒有任何牌組，無法參加比賽。請先至「我的牌組」建立一副牌組。")
+                else:
+                    available_events = df_events[~df_events['e_id'].isin(joined_event_ids)]
+                    
+                    if available_events.empty:
+                        st.info("您已報名了所有可參加的賽事，或是目前沒有賽事。")
+                    else:
+                        # 步驟 A: 選擇賽事
+                        # 製作選單：顯示名稱 + 日期 + 時間 以防同名
+                        available_events['display_label'] = available_events['e_name'] + " (" + available_events['e_date'].astype(str) + " " + pd.to_datetime(available_events['e_time']).dt.strftime('%H:%M') + ")"
+                        event_map = dict(zip(available_events['display_label'], available_events['e_id']))
+                        
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            sel_event_label = st.selectbox("選擇要參加的活動", available_events['display_label'])
+                            target_e_id = event_map[sel_event_label]
+
+                        # 步驟 B: 選擇使用的牌組
+                        with c2:
+                            # 製作牌組選單
+                            deck_map = dict(zip(df_my_decks['牌組名稱'], df_my_decks['d_id']))
+                            sel_deck_name = st.selectbox("選擇使用的牌組", list(deck_map.keys()))
+                            target_d_id = deck_map[sel_deck_name]
+                            
+                            # 這裡可以做一個簡單的檢查，例如檢查牌組是否合法(張數是否足夠)，這邊先跳過
+
+                        # 步驟 C: 送出報名
+                        if st.button("確認報名", type="primary", use_container_width=True):
+                            # 根據 Schema: PK 是 (p_id, e_id, d_id)，所以 Payload 要包含這三個
+                            payload = {
+                                "p_id": p_id,
+                                "e_id": target_e_id,
+                                "d_id": target_d_id
+                            }
+                            
+                            # 呼叫後端 API
+                            if send_data("player/join_event", payload):
+                                st.success(f"成功報名「{sel_event_label}」！使用牌組：「{sel_deck_name}」")
+                                time.sleep(1)
+                                st.rerun() # 重新整理以更新人數
+                            else:
+                                st.error("報名失敗。可能是名額已滿，或是您已經報名過此賽事。")
+
+            else:
+                st.info("目前沒有可用的賽事。")
 
 def shop_dashboard():
     user = st.session_state['user_info']
@@ -432,12 +570,24 @@ def shop_dashboard():
 
         elif menu == "舉辦活動":
             st.header("發布新賽事")
+            size_options = ["POD", "LOCAL", "REGIONAL", "MAJOR"]
+            size_labels = {
+                "POD": "POD (8人)",
+                "LOCAL": "LOCAL (16人)",
+                "REGIONAL": "REGIONAL (32人)",
+                "MAJOR": "MAJOR (64人)"
+            }
+
             name = st.text_input("名稱")
             c1, c2 = st.columns(2)
             date = c1.date_input("日期")
             time = c2.time_input("時間", datetime.time(12,0))
             fmt = st.selectbox("賽制", ["標準", "開放"])
-            size = st.text_input("人數", "16")
+            size = st.selectbox(
+                "規模", 
+                options=size_options, 
+                format_func=lambda x: size_labels[x]
+            )
             round_type = st.selectbox("類型", ["瑞士輪", "淘汰賽"])
 
             if st.button("發布"):

@@ -244,6 +244,63 @@ def filter_cards(c_name=None, c_type=None, c_rarity=None):
             
             cur.execute(query, tuple(params))
             return cur.fetchall()
+        
+def join_event(p_id, e_id, d_id):
+    SIZE_MAPPING = {
+        "POD": 8, "LOCAL": 16, "REGIONAL": 32, "MAJOR": 64
+    }
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT e_size FROM "EVENT" WHERE e_id = %s', (e_id,))
+                event_row = cur.fetchone()
+                if not event_row:
+                    return {"success": False, "message": "賽事不存在"}
+                
+                e_size_str = event_row[0]
+                limit_qty = SIZE_MAPPING.get(e_size_str)
+
+                # 2-2. 計算目前已報名人數
+                cur.execute("""
+                    SELECT COUNT(*) FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK"
+                    WHERE e_id = %s
+                """, (e_id,))
+                current_qty = cur.fetchone()[0]
+
+                # 2-3. 比對 (如果 目前 >= 上限，就炸掉)
+                if current_qty >= limit_qty:
+                    return {"success": False, "message": f"報名失敗：人數已滿 ({current_qty}/{limit_qty})"}
+
+                cur.execute("""
+                    INSERT INTO "PLAYER_PARTICIPATES_EVENT_WITH_DECK" ("p_id", "e_id", "d_id") VALUES (%s, %s, %s)
+                """, (p_id, e_id, d_id))
+        return True
+    except Exception as e:
+        print(e)
+        return False
+        
+def get_player_participations_detailed(p_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            sql = """
+                SELECT 
+                    pped."p_id",
+                    pped."e_id",
+                    pped."d_id",
+                    e."e_name",
+                    e."e_date",
+                    e."e_format",
+                    e."e_time",
+                    s."s_name",
+                    d."d_name"
+                FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK" AS pped
+                JOIN "EVENT" AS e ON pped.e_id = e.e_id
+                JOIN "SHOP" AS s ON E.org_shop_id = s.s_id
+                JOIN "DECK" AS d ON pped.d_id = d.d_id
+                WHERE pped.p_id = %s
+            """
+            cur.execute(sql, (p_id,))
+            return cur.fetchall()
 
 # --- Shop Features (不變) ---
 def get_shop_inventory(s_id):
@@ -294,7 +351,13 @@ def create_event(e_name, e_format, e_date, e_time, e_size, e_round, s_id):
 def get_all_events():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute('SELECT * FROM "EVENT"')
+            cur.execute("""
+                SELECT e."e_id", e."e_name", e."e_date", e."e_time", e."e_size", e."e_format", e."e_roundtype", s."s_name", COUNT(p."p_id") as current_participants
+                FROM "EVENT" AS e
+                JOIN "SHOP" AS s ON e."org_shop_id" = s."s_id"
+                LEFT JOIN "PLAYER_PARTICIPATES_EVENT_WITH_DECK" AS p ON e."e_id" = p."e_id"
+                GROUP BY e."e_id", s."s_name"
+            """)
             return cur.fetchall()
 
 def get_all_shop_items():
