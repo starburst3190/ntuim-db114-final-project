@@ -142,55 +142,115 @@ def player_dashboard():
 
     with st.spinner(f"正在載入 {menu}..."):
         
-        # --- 我的收藏 (不變) ---
+        # --- 我的收藏 ---
         if menu == "我的收藏":
             st.header("我的卡片")
             df = fetch_data(f"player/{p_id}/cards")
-            st.dataframe(df, width="stretch")
+            if not df.empty:
+                st.dataframe(df, width="stretch", column_config={"c_id": None})
+            else:
+                st.info("您沒有登錄的卡片，請點擊下方「登錄新卡片」設定收藏")
 
             with st.expander("登錄新卡片"):
-                # 這裡的 fetch_data("cards") 會回傳精簡列表
                 all_cards = fetch_data("cards")
+                
                 if not all_cards.empty:
-                    card_map = dict(zip(all_cards['c_name'], all_cards['c_id']))
-                    sel_card = st.selectbox("選擇卡牌", all_cards['c_name'])
+                    # 步驟 A: 建立一個不重複的顯示名稱 (格式: 名稱 [稀有度])
+                    all_cards['display_label'] = all_cards['c_name'] + " [" + all_cards['c_rarity'] + "]"
+                    
+                    # 步驟 B: 建立 顯示名稱 -> ID 的對照表
+                    # 這樣就算名稱重複，加上稀有度後就會是不同的 Key
+                    card_map = dict(zip(all_cards['display_label'], all_cards['c_id']))
+                    
+                    # 步驟 C: 讓玩家選擇這個「組合後的名稱」
+                    sel_label = st.selectbox("選擇卡牌", all_cards['display_label'])
+                    
                     qty = st.number_input("數量", min_value=1, value=1)
                     
                     if st.button("加入"):
-                        payload = {"p_id": p_id, "c_id": card_map[sel_card], "qty": qty}
+                        # 步驟 D: 透過選單的 label 查回正確的 c_id
+                        target_c_id = card_map[sel_label]
+                        
+                        payload = {"p_id": p_id, "c_id": target_c_id, "qty": qty}
+                        
                         if send_data("player/add_card", payload):
-                            st.success("成功！")
+                            st.success(f"成功加入 {sel_label}！")
                             st.rerun()
                         else:
                             st.error("失敗")
+            if not df.empty:
+                with st.expander("刪除卡片"):
+                    df['inv_label'] = (
+                        df['卡牌名稱'] + 
+                        " [" + df['稀有度'] + "] " +
+                        "(擁有量: " + df['擁有量'].astype(str) + ")"
+                    )
+                    
+                    # 建立 對應表: Label -> (Card ID, 目前數量)
+                    # 這樣我們稍後才能知道這張卡最多能刪幾張
+                    inv_map = {
+                        row['inv_label']: {'c_id': row['c_id'], 'max_qty': row['擁有量']} 
+                        for index, row in df.iterrows()
+                    }
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        sel_card_del = st.selectbox("選擇要減少的卡牌", list(inv_map.keys()), key="del_select")
+                    
+                    # 取得該卡片目前的庫存上限，防止玩家刪除超過持有的數量
+                    current_owned = inv_map[sel_card_del]['max_qty']
+                    target_c_id = inv_map[sel_card_del]['c_id']
 
-        # --- 我的牌組 (主要修改區塊) ---
+                    with col2:
+                        # 設定 max_value 等於持有數，這樣玩家最多只能選到全部刪除
+                        qty_del = st.number_input("減少數量", min_value=1, max_value=current_owned, value=1, key="del_qty")
+                    
+                    # 顯示提示文字
+                    if qty_del == current_owned:
+                        st.warning(f"注意：將會從收藏中完全移除此卡片！")
+                    
+                    if st.button("確認減少 / 刪除"):
+                        payload = {"p_id": p_id, "c_id": target_c_id, "qty": qty_del}
+                        
+                        if send_data("player/remove_card", payload):
+                            st.success(f"已移除 {qty_del} 張卡片")
+                            st.rerun()
+
+        # --- 我的牌組 ---
         elif menu == "我的牌組":
             st.header("牌組管理")
             df_decks = fetch_data(f"player/{p_id}/decks")
-            st.dataframe(df_decks, width="stretch")
+            if not df_decks.empty:
+                st.dataframe(
+                    df_decks, 
+                    width="stretch",
+                    column_config={
+                        "d_id": None
+                    }
+                )
             
             st.subheader("建立新牌組")
-            c1, c2 = st.columns([3, 1])
+            c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
             new_name = c1.text_input("牌組名稱", placeholder="輸入牌組名稱")
             if c2.button("建立", width="stretch"):
-                payload = {"p_id": p_id, "d_name": new_name}
-                if send_data("player/create_deck", payload):
-                    st.success("建立成功")
-                    st.rerun()
+                if new_name:
+                    payload = {"p_id": p_id, "d_name": new_name}
+                    if send_data("player/create_deck", payload):
+                        st.success("建立成功")
+                        st.rerun()
+                else:
+                    st.error("牌組名稱為空")
 
             if not df_decks.empty:
-                # 取得 d_id 和 d_name 的對應
-                deck_options = dict(zip(df_decks['d_name'], df_decks['d_id']))
+                deck_options = dict(zip(df_decks['牌組名稱'], df_decks['d_id']))
                 deck_names = list(deck_options.keys())
                 
-                # --- 新增：編輯牌組內容 ---
                 with st.expander("編輯牌組內容"):
                     sel_deck_name_edit = st.selectbox("選擇要編輯的牌組", deck_names, key="edit_deck_select")
+                    
                     sel_d_id_edit = deck_options[sel_deck_name_edit] if sel_deck_name_edit else None
 
                     if sel_d_id_edit:
-                        # 顯示目前牌組內容
                         current_comp = fetch_data(f"deck/{sel_d_id_edit}/composition")
                         if not current_comp.empty:
                             st.caption(f"目前 {sel_deck_name_edit} 的組成:")
@@ -291,12 +351,18 @@ def player_dashboard():
         elif menu == "線上商城":
             st.header("瀏覽商城")
             df = fetch_data("market")
-            st.dataframe(df, width="stretch")
+            if not df.empty:
+                st.dataframe(df, width="stretch")
+            else:
+                st.info("查無商品")
 
         elif menu == "賽事報名":
             st.header("賽事列表")
             df = fetch_data("events")
-            st.dataframe(df, width="stretch")
+            if not df.empty:
+                st.dataframe(df, width="stretch")
+            else:
+                st.info("查無賽事")
 
 def shop_dashboard():
     user = st.session_state['user_info']

@@ -22,7 +22,7 @@ class RegisterRequest(BaseModel):
     extra_info: Optional[str] = None
     phone: Optional[str] = None
 
-class AddCardRequest(BaseModel):
+class AlterCardRequest(BaseModel):
     p_id: int
     c_id: int
     qty: int
@@ -109,10 +109,16 @@ def get_all_cards(
     return db.get_all_card_names_and_ids()
 
 @app.post("/player/add_card")
-def add_card(data: AddCardRequest):
+def add_card(data: AlterCardRequest):
     if db.upsert_player_card(data.p_id, data.c_id, data.qty):
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to add card")
+
+@app.post("/player/remove_card")
+def remove_card(data: AlterCardRequest):
+    if db.delete_player_card(data.p_id, data.c_id, data.qty):
+        return {"status": "success"}
+    raise HTTPException(status_code=500, detail="Failed to delete card")
 
 @app.get("/player/{p_id}/decks")
 def get_decks(p_id: int):

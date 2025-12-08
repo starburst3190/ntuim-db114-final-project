@@ -81,7 +81,7 @@ def get_player_cards(p_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT c."c_name", c."c_rarity", phc."qty"
+                SELECT c."c_id", c."c_name" AS "卡牌名稱", c."c_rarity" AS "稀有度", phc."qty" AS "擁有量"
                 FROM "PLAYER_HAS_CARD" phc
                 JOIN "CARD" c ON phc."c_id" = c."c_id"
                 WHERE phc."p_id" = %s
@@ -89,10 +89,10 @@ def get_player_cards(p_id):
             return cur.fetchall()
 
 def get_all_card_names_and_ids():
-    """為了登錄卡牌功能，只回傳 ID 和名稱。"""
+    """登錄卡牌功能用，回傳 ID、名稱和稀有度。"""
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute('SELECT "c_id", "c_name" FROM "CARD"')
+            cur.execute('SELECT "c_id", "c_name", "c_rarity" FROM "CARD"')
             return cur.fetchall()
 
 def upsert_player_card(p_id, c_id, qty):
@@ -108,12 +108,27 @@ def upsert_player_card(p_id, c_id, qty):
     except Exception as e:
         print(e)
         return False
+    
+def delete_player_card(p_id, c_id, qty):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT "qty" FROM "PLAYER_HAS_CARD" WHERE "p_id"=%s AND "c_id"=%s', (p_id, c_id))
+                original = cur.fetchone()['qty']
+                if original - qty <= 0:
+                    cur.execute('DELETE FROM "PLAYER_HAS_CARD" WHERE "p_id"=%s AND "c_id"=%s', (p_id, c_id))
+                else:
+                    cur.execute('UPDATE "PLAYER_HAS_CARD" SET "qty" = "qty" - %s WHERE "p_id"=%s AND "c_id"=%s', (qty, p_id, c_id))
+        return True
+    except Exception as e:
+        print(e)
+        return False
 
 def get_player_decks(p_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT d."d_id", d."d_name"
+                SELECT d."d_id", d."d_name" AS "牌組名稱"
                 FROM "DECK" d 
                 JOIN "PLAYER_BUILDS_DECK" pbd ON d."d_id" = pbd."d_id" 
                 WHERE pbd."p_id" = %s
