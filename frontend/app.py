@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import datetime
+import time
 from streamlit_option_menu import option_menu
 
 API_URL = "http://localhost:8000"
@@ -219,80 +220,108 @@ def player_dashboard():
         # --- 我的牌組 ---
         elif menu == "我的牌組":
             st.header("牌組管理")
-            df_decks = fetch_data(f"player/{p_id}/decks")
-            if not df_decks.empty:
-                st.dataframe(
-                    df_decks, 
-                    width="stretch",
-                    column_config={
-                        "d_id": None
-                    }
-                )
-            
-            st.subheader("建立新牌組")
-            c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
-            new_name = c1.text_input("牌組名稱", placeholder="輸入牌組名稱")
-            if c2.button("建立", width="stretch"):
-                if new_name:
-                    payload = {"p_id": p_id, "d_name": new_name}
-                    if send_data("player/create_deck", payload):
-                        st.success("建立成功")
-                        st.rerun()
-                else:
-                    st.error("牌組名稱為空")
 
-            if not df_decks.empty:
+            # --- 區域 1: 建立新牌組 (摺疊起來，節省空間) ---
+            with st.expander("建立新牌組", expanded=False):
+                c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+                new_name = c1.text_input("輸入新牌組名稱", placeholder="例如：噴火龍快攻")
+                if c2.button("建立", width="stretch"):
+                    if new_name:
+                        payload = {"p_id": p_id, "d_name": new_name}
+                        if send_data("player/create_deck", payload):
+                            st.success(f"牌組「{new_name}」建立成功！")
+                            st.rerun()
+                    else:
+                        st.error("牌組名稱不能為空")
+
+            st.divider()
+
+            # --- 區域 2: 選擇要管理的牌組 (主控台) ---
+            df_decks = fetch_data(f"player/{p_id}/decks")
+            
+            if df_decks.empty:
+                st.info("目前沒有牌組，請先在上方建立一個吧！")
+            else:
+                # 製作選單： 讓玩家選一個牌組，後續所有操作都針對這個牌組
                 deck_options = dict(zip(df_decks['牌組名稱'], df_decks['d_id']))
                 deck_names = list(deck_options.keys())
                 
-                with st.expander("編輯牌組內容"):
-                    sel_deck_name_edit = st.selectbox("選擇要編輯的牌組", deck_names, key="edit_deck_select")
+                # 使用 selectbox 成為頁面的「狀態選擇器」
+                selected_deck_name = st.selectbox("選擇要管理的牌組", deck_names)
+                selected_d_id = deck_options[selected_deck_name]
+
+                # --- 區域 3: 針對選定牌組的功能區 (Tabs) ---
+                tab1, tab2, tab3 = st.tabs(["內容編輯", "缺卡檢測", "刪除牌組"])
+
+                # === Tab 1: 編輯牌組內容 (核心功能) ===
+                with tab1:
+                    col_list, col_edit = st.columns([1.5, 1])
                     
-                    sel_d_id_edit = deck_options[sel_deck_name_edit] if sel_deck_name_edit else None
-
-                    if sel_d_id_edit:
-                        current_comp = fetch_data(f"deck/{sel_d_id_edit}/composition")
+                    with col_list:
+                        st.caption(f"「{selected_deck_name}」目前的組成")
+                        current_comp = fetch_data(f"deck/{selected_d_id}/composition")
                         if not current_comp.empty:
-                            st.caption(f"目前 {sel_deck_name_edit} 的組成:")
-                            st.dataframe(current_comp, width="stretch")
+                            st.dataframe(current_comp, width="stretch", height=400)
+                        else:
+                            st.info("這副牌組還是空的")
 
-                        st.divider()
-                        st.subheader("新增/修改卡片數量 (設為 0 刪除)")
+                    with col_edit:
+                        st.caption("新增 / 修改卡片")
                         all_cards_list = fetch_data("cards")
+                        
                         if not all_cards_list.empty:
-                            card_map = dict(zip(all_cards_list['c_name'], all_cards_list['c_id']))
-                            card_names = all_cards_list['c_name'].tolist()
+                            all_cards_list['display_label'] = all_cards_list['c_name'] + " [" + all_cards_list['c_rarity'] + "]"
+                            card_map = dict(zip(all_cards_list['display_label'], all_cards_list['c_id']))
                             
-                            col1, col2 = st.columns([3, 1])
-                            sel_card_edit = col1.selectbox("選擇卡牌", card_names)
-                            qty_edit = col2.number_input("數量", min_value=0, value=1, key="deck_qty")
+                            sel_card_label = st.selectbox("搜尋並選擇卡牌", all_cards_list['display_label'])
                             
-                            if st.button(f"更新 {sel_deck_name_edit}", key="btn_update_deck"):
+                            qty_edit = st.number_input("數量 (設為 0 移除)", min_value=0, value=1)
+                            
+                            if st.button("更新牌組", type="primary", width="stretch"):
                                 payload = {
-                                    "d_id": sel_d_id_edit, 
-                                    "c_id": card_map[sel_card_edit], 
+                                    "d_id": selected_d_id, 
+                                    "c_id": card_map[sel_card_label], 
                                     "qty": qty_edit
                                 }
                                 if send_data("deck/add_card", payload):
-                                    st.success(f"成功更新牌組：{sel_card_edit} x {qty_edit}")
+                                    action = "移除" if qty_edit == 0 else "更新"
+                                    st.toast(f"已{action}：{sel_card_label}", icon="✅")
+                                    time.sleep(0.5) # 稍微停頓讓 toast 顯示
                                     st.rerun()
-                
-                # --- 核心新增：缺卡查詢 ---
-                with st.expander("檢視缺少的卡牌"):
-                    sel_deck_name_missing = st.selectbox("選擇牌組進行缺卡檢查", deck_names, key="missing_deck_select")
-                    sel_d_id_missing = deck_options[sel_deck_name_missing] if sel_deck_name_missing else None
-                    
-                    if sel_d_id_missing and st.button(f"檢查 {sel_deck_name_missing} 缺少的卡牌"):
-                        with st.spinner("正在比對你的收藏與牌組需求..."):
-                            # Call the new API endpoint
-                            missing_df = fetch_data(f"player/{p_id}/decks/{sel_d_id_missing}/missing_cards")
+
+                # === Tab 2: 缺卡檢測 (分析功能) ===
+                with tab2:
+                    st.markdown(f"### 正在檢查：{selected_deck_name}")
+                    if st.button("開始比對庫存"):
+                        with st.spinner("正在掃描您的卡片庫存..."):
+                            # 直接使用選定的 ID，不用再選一次
+                            missing_df = fetch_data(f"player/{p_id}/decks/{selected_d_id}/missing_cards")
+                            
                             if missing_df.empty:
-                                st.success(f"{sel_deck_name_missing}：恭喜！卡牌已齊全。")
+                                st.balloons()
+                                st.success("太棒了！您擁有組成這副牌組的所有卡片。")
                             else:
-                                st.warning(f"{sel_deck_name_missing} 缺少以下卡牌：")
-                                st.dataframe(missing_df, width="stretch")
-            else:
-                st.info("您尚未建立任何牌組。請先建立牌組！")
+                                st.warning(f"這副牌組還缺少 {len(missing_df)} 種卡片：")
+                                # 顯示缺卡列表
+                                st.dataframe(
+                                    missing_df, 
+                                    width="stretch",
+                                    column_config={
+                                        "c_name": "卡片名稱",
+                                        "missing_qty": "缺少數量"
+                                    }
+                                )
+
+                # === Tab 3: 刪除功能 ===
+                with tab3:
+                    st.write(f"您確定要刪除整個牌組 **{selected_deck_name}** 嗎？此動作無法復原。")
+                    
+                    # 加上確認機制，避免誤觸
+                    if st.button(f"永久刪除 {selected_deck_name}", type="primary"):
+                        payload = {"p_id": p_id, "d_id": selected_d_id}
+                        if send_data("player/remove_deck", payload):
+                            st.success(f"牌組 {selected_deck_name} 已刪除")
+                            st.rerun()
 
 # --- 修改後的卡牌查詢頁面 (app.py) ---
         elif menu == "卡牌查詢":

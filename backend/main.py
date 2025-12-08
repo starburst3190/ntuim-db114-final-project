@@ -31,6 +31,10 @@ class CreateDeckRequest(BaseModel):
     p_id: int
     d_name: str
 
+class RemoveDeckRequest(BaseModel):
+    p_id: int
+    d_id: int
+
 class AddProductRequest(BaseModel):
     s_id: int
     prod_id: int
@@ -129,6 +133,12 @@ def create_deck(data: CreateDeckRequest):
     if db.create_deck(data.p_id, data.d_name):
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to create deck")
+
+@app.post("/player/remove_deck")
+def remove_deck(data: RemoveDeckRequest):
+    if db.remove_deck(data.p_id, data.d_id):
+        return {"status": "success"}
+    raise HTTPException(status_code=500, detail="Failed to remove deck")
 
 # --- 新增：取得牌組組成 ---
 @app.get("/deck/{d_id}/composition")

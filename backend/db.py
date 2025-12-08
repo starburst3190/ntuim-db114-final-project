@@ -147,12 +147,22 @@ def create_deck(p_id, d_name):
         print(e)
         return False
 
+def remove_deck(p_id, d_id):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM "PLAYER_BUILDS_DECK" WHERE "p_id"=%s AND "d_id"=%s', (p_id, d_id))
+        return True
+    except Exception as e:
+        print(e)
+        return False
+
 # --- 新增：牌組組成功能 ---
 def get_deck_composition(d_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT c."c_name", dcoc."qty"
+                SELECT c."c_name" AS "卡牌名稱", dcoc."qty" AS "組成數量"
                 FROM "DECK_CONSISTS_OF_CARD" dcoc
                 JOIN "CARD" c ON dcoc."c_id" = c."c_id"
                 WHERE dcoc."d_id" = %s
