@@ -186,7 +186,7 @@ def add_card_to_deck(data: UpsertDeckCardRequest):
 def get_missing_deck_cards(p_id: int, d_id: int):
     return db.get_missing_cards_for_deck(p_id, d_id)
 
-# --- Shop Routes (不變) ---
+# --- Shop Routes ---
 @app.get("/shop/{s_id}/products")
 def get_shop_inventory(s_id: int):
     return db.get_shop_inventory(s_id)
@@ -218,6 +218,10 @@ def create_event(data: CreateEventRequest):
     if db.create_event(data.e_name, data.e_format, data.e_date, data.e_time, data.e_size, data.e_round, data.s_id):
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to create event")
+
+@app.get("/shop/{s_id}/sales_detail")
+def get_sales_detail(s_id: int):
+    return db.get_sales_detail(s_id)
 
 # --- Public Routes ---
 @app.get("/market")

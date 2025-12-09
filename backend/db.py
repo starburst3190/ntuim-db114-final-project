@@ -374,7 +374,7 @@ def buy_product(p_id, s_id, prod_id, buy_qty):
         print(f"Buy Error: {e}")
         return {"success": False, "message": f"交易失敗: {str(e)}"}
 
-# --- Shop Features (不變) ---
+# --- Shop Features ---
 def get_shop_inventory(s_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -483,7 +483,29 @@ def create_event(e_name, e_format, e_date, e_time, e_size, e_round, s_id):
         print(e)
         return False
 
-# --- Common Features (不變) ---
+def get_sales_detail(s_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT 
+                    sa."sales_id",
+                    sa."datetime",
+                    sa."p_id",
+                    pl."p_name",
+                    sd."prod_id",
+                    pr."prod_name",
+                    pr."prod_type",
+                    sd."qty"
+                FROM "SALES_DETAIL" sd
+                JOIN "SALES" sa ON sd."sales_id" = sa."sales_id"
+                JOIN "PLAYER" pl ON sa."p_id" = pl."p_id"
+                JOIN "PRODUCT" pr ON sd."prod_id" = pr."prod_id"
+                WHERE sa."s_id" = %s
+                ORDER BY sa."datetime" DESC
+            """, (s_id,))
+            return cur.fetchall()
+
+# --- Common Features ---
 def get_all_events():
     with get_db_connection() as conn:
         with conn.cursor() as cur:

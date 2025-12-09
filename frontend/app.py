@@ -591,8 +591,6 @@ def player_dashboard():
                             deck_map = dict(zip(df_my_decks['牌組名稱'], df_my_decks['d_id']))
                             sel_deck_name = st.selectbox("選擇使用的牌組", list(deck_map.keys()))
                             target_d_id = deck_map[sel_deck_name]
-                            
-                            # 這裡可以做一個簡單的檢查，例如檢查牌組是否合法(張數是否足夠)，這邊先跳過
 
                         # 步驟 C: 送出報名
                         if st.button("確認報名", type="primary", use_container_width=True):
@@ -797,7 +795,88 @@ def shop_dashboard():
                     st.error("發布失敗")
         
         elif menu == "銷售記錄":
-            123
+            st.header("銷售記錄查詢")
+
+            # 1. 呼叫 API 取得原始資料
+            df_sales = fetch_data(f"shop/{s_id}/sales_detail")
+
+            if not df_sales.empty:
+                # 資料前處理：確保時間格式正確，方便顯示
+                df_sales['datetime'] = pd.to_datetime(df_sales['datetime'])
+                
+                # 組合顯示名稱 (讓商品名稱包含類型)
+                if "prod_type" in df_sales.columns:
+                    df_sales["prod_display"] = df_sales["prod_name"] + " (" + df_sales["prod_type"] + ")"
+                else:
+                    df_sales["prod_display"] = df_sales["prod_name"]
+
+                # --- 2. 篩選控制區 (Search Filters) ---
+                with st.expander("搜尋 / 篩選條件", expanded=True):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # 支援輸入部分 ID 或名稱
+                        filter_p_id = st.text_input("玩家 ID 或 名稱", placeholder="輸入 ID 或 姓名")
+                    
+                    with col2:
+                        filter_sales_id = st.text_input("銷售單號 (Sales ID)", placeholder="輸入完整單號")
+                    
+                    with col3:
+                        filter_prod = st.text_input("商品 ID 或 名稱", placeholder="輸入 ID 或 商品名")
+
+                    # 日期篩選 (選填)
+                    filter_date = st.date_input("交易日期篩選", value=None)
+
+                # --- 3. 執行 Pandas 篩選邏輯 ---
+                # 預設顯示全部，若使用者有輸入條件則過濾 df
+                filtered_df = df_sales.copy()
+
+                if filter_p_id:
+                    # 讓使用者可以輸入 "1" (ID) 或是 "Alice" (Name) 都能搜
+                    filtered_df = filtered_df[
+                        filtered_df['p_id'].astype(str).str.contains(filter_p_id) | 
+                        filtered_df['p_name'].str.contains(filter_p_id, case=False)
+                    ]
+
+                if filter_sales_id:
+                    filtered_df = filtered_df[filtered_df['sales_id'].astype(str) == filter_sales_id]
+
+                if filter_prod:
+                    filtered_df = filtered_df[
+                        filtered_df['prod_id'].astype(str).str.contains(filter_prod) | 
+                        filtered_df['prod_name'].str.contains(filter_prod, case=False)
+                    ]
+
+                if filter_date:
+                    # 篩選特定日期的交易
+                    filtered_df = filtered_df[filtered_df['datetime'].dt.date == filter_date]
+
+                # --- 4. 顯示結果表格 ---
+                st.divider()
+                st.subheader(f"查詢結果 ({len(filtered_df)} 筆)")
+
+                if not filtered_df.empty:
+                    st.dataframe(
+                        filtered_df,
+                        width="stretch",
+                        column_config={
+                            "sales_id": st.column_config.NumberColumn("銷售單號", format="%d"),
+                            "datetime": st.column_config.DatetimeColumn("交易時間", format="YYYY-MM-DD HH:mm"),
+                            "p_id": st.column_config.NumberColumn("玩家 ID", format="%d"),
+                            "p_name": "玩家名稱",
+                            "prod_id": None, # 隱藏，因為已經合併顯示在 prod_display
+                            "prod_name": None, # 隱藏
+                            "prod_type": None, # 隱藏
+                            "prod_display": "商品內容",
+                            "qty": st.column_config.NumberColumn("數量")
+                        },
+                        hide_index=True
+                    )
+                else:
+                    st.warning("沒有符合篩選條件的記錄。")
+
+            else:
+                st.info("目前沒有任何銷售記錄。")
 
 if __name__ == "__main__":
     if not st.session_state['logged_in']:
