@@ -26,7 +26,7 @@ mongo_db = None
 try:
     if MONGO_URI:
         mongo_client = pymongo.MongoClient(MONGO_URI)
-        mongo_db = mongo_client["tcg_logs"] # 這個要改
+        mongo_db = mongo_client["tcg_logs"]
         print("Connected to MongoDB Atlas successfully!")
     else:
         print("MongoDB URI not found in .env, skipping Mongo connection.")
@@ -61,7 +61,7 @@ def get_db_connection():
     finally:
         connection_pool.putconn(conn) 
 
-# --- User / Auth (不變) ---
+# --- User / Auth ---
 def get_player_by_email(email):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -175,7 +175,7 @@ def remove_deck(p_id, d_id):
         print(e)
         return False
 
-# --- 新增：牌組組成功能 ---
+# --- 牌組組成功能 ---
 def get_deck_composition(d_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -207,7 +207,7 @@ def upsert_deck_card(d_id, c_id, qty):
         print(e)
         return False
 
-# --- 核心新增：缺卡計算邏輯 ---
+# --- 缺卡計算邏輯 ---
 def get_missing_cards_for_deck(p_id, d_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -249,7 +249,7 @@ def log_search_history(c_name, c_type, c_rarity):
         except Exception as e:
             print(f"Failed to log search to MongoDB: {e}")
 
-# --- 核心新增：卡牌篩選查詢 ---
+# --- 卡牌篩選查詢 ---
 def filter_cards(c_name=None, c_type=None, c_rarity=None):
     log_search_history(c_name, c_type, c_rarity)
 
@@ -298,7 +298,6 @@ def join_event(p_id, e_id, d_id):
                 e_size_str = event_row['e_size']
                 limit_qty = SIZE_MAPPING.get(e_size_str)
 
-                # 2-2. 計算目前已報名人數
                 cur.execute("""
                     SELECT COUNT(*) AS participate_cnt
                     FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK"
@@ -306,7 +305,6 @@ def join_event(p_id, e_id, d_id):
                 """, (e_id,))
                 current_qty = cur.fetchone()['participate_cnt']
 
-                # 2-3. 比對 (如果 目前 >= 上限，就炸掉)
                 if current_qty >= limit_qty:
                     return {"success": False, "message": f"報名失敗：人數已滿 ({current_qty}/{limit_qty})"}
 

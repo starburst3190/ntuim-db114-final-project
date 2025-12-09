@@ -2,9 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
 import bcrypt
-# 注意：為了正確運行，你需要確保 db.py 可以在這個 main.py 檔案中被正確引入
-# 如果你是放在同一個資料夾，並且直接執行 main.py，可能需要修改 .db 為 db
-from . import db # 假設是這樣引入
+from . import db
 
 app = FastAPI()
 
@@ -69,14 +67,13 @@ class CreateEventRequest(BaseModel):
     e_size: str
     e_round: str
     s_id: int
-    
-# --- 核心新增：用於新增/編輯牌組卡片 ---
+
 class UpsertDeckCardRequest(BaseModel):
     d_id: int
     c_id: int
     qty: int # 數量設為 0 時會被刪除
 
-# --- Auth Routes (不變) ---
+# --- Auth Routes ---
 @app.post("/login")
 def login(data: LoginRequest):
     user = None
@@ -118,7 +115,6 @@ def register(data: RegisterRequest):
 def get_cards(p_id: int):
     return db.get_player_cards(p_id)
 
-# --- 修改：cards 接口現在支援篩選，如果沒有參數，則回傳用於新增卡牌的列表 ---
 @app.get("/cards")
 def get_all_cards(
     name: Optional[str] = Query(None, description="卡牌名稱關鍵字"),
@@ -182,19 +178,19 @@ def leave_event(data: LeaveEventRequest):
         raise HTTPException(status_code=400, detail=result["error"])
     raise HTTPException(status_code=500, detail="Failed to leave event")
 
-# --- 新增：取得牌組組成 ---
+# --- 取得牌組組成 ---
 @app.get("/deck/{d_id}/composition")
 def get_deck_composition(d_id: int):
     return db.get_deck_composition(d_id)
 
-# --- 新增：新增卡片到牌組 ---
+# --- 新增卡片到牌組 ---
 @app.post("/deck/add_card")
 def add_card_to_deck(data: UpsertDeckCardRequest):
     if db.upsert_deck_card(data.d_id, data.c_id, data.qty):
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to update deck card")
 
-# --- 核心新增：查詢缺卡 ---
+# --- 查詢缺卡 ---
 @app.get("/player/{p_id}/decks/{d_id}/missing_cards")
 def get_missing_deck_cards(p_id: int, d_id: int):
     return db.get_missing_cards_for_deck(p_id, d_id)

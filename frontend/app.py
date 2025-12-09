@@ -68,7 +68,7 @@ def send_data(endpoint, payload):
         pass
     return False
 
-# --- Session Management (不變) ---
+# --- Session Management ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'user_type' not in st.session_state:
@@ -80,7 +80,7 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
-# --- Pages (Login/Register 不變) ---
+# --- Pages ---
 def login_page():
     st.title("TCG ONLINE SHOP")
     tab1, tab2 = st.tabs(["登入", "註冊"])
@@ -131,7 +131,7 @@ def player_dashboard():
     with st.sidebar:
         st.title(f"歡迎回來，{user['p_name']}")
         
-        # --- 修改：新增「卡牌查詢」選單 ---
+        # --- 選單列表 ---
         menu = option_menu(
             menu_title=None,
             options=["我的收藏", "我的牌組", "卡牌查詢", "線上商城", "賽事報名"],
@@ -624,7 +624,6 @@ def player_dashboard():
 
                         # 步驟 C: 送出報名
                         if st.button("確認報名", type="primary", use_container_width=True):
-                            # 根據 Schema: PK 是 (p_id, e_id, d_id)，所以 Payload 要包含這三個
                             payload = {
                                 "p_id": p_id,
                                 "e_id": target_e_id,
