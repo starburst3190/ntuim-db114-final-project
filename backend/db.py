@@ -4,9 +4,12 @@ from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
 from dotenv import load_dotenv
+import pymongo
+import datetime
 
 load_dotenv()
 
+# PostgreSQL DB Config
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME", "DBMS_final_project"),
     "user": os.getenv("DB_USER", "postgres"),
@@ -14,6 +17,21 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": os.getenv("DB_PORT", "5432")
 }
+
+# MongoDB Config
+MONGO_URI = os.getenv("MONGODB_URI")
+mongo_client = None
+mongo_db = None
+
+try:
+    if MONGO_URI:
+        mongo_client = pymongo.MongoClient(MONGO_URI)
+        mongo_db = mongo_client["tcg_logs"] # 這個要改
+        print("Connected to MongoDB Atlas successfully!")
+    else:
+        print("MongoDB URI not found in .env, skipping Mongo connection.")
+except Exception as e:
+    print(f"Error connecting to MongoDB: {e}")
 
 # --- 效能優化：建立連線池 (Connection Pool) ---
 try:
@@ -213,8 +231,28 @@ def get_missing_cards_for_deck(p_id, d_id):
             """, (p_id, d_id))
             return cur.fetchall()
 
+def log_search_history(c_name, c_type, c_rarity):
+    if mongo_db is not None:
+        try:
+            collection = mongo_db["search_history"]
+            
+            log_data = {
+                "timestamp": datetime.datetime.now(),
+                "search_criteria": {
+                    "name": c_name,
+                    "type": c_type,
+                    "rarity": c_rarity
+                },
+            }
+            
+            collection.insert_one(log_data)
+        except Exception as e:
+            print(f"Failed to log search to MongoDB: {e}")
+
 # --- 核心新增：卡牌篩選查詢 ---
 def filter_cards(c_name=None, c_type=None, c_rarity=None):
+    log_search_history(c_name, c_type, c_rarity)
+
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             query = """
