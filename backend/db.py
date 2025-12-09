@@ -290,7 +290,11 @@ def join_event(p_id, e_id, d_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute('SELECT e_size FROM "EVENT" WHERE e_id = %s', (e_id,))
+                cur.execute("""
+                    SELECT "e_size" FROM "EVENT"
+                    WHERE "e_id" = %s
+                    FOR UPDATE
+                """, (e_id,))
                 event_row = cur.fetchone()
                 if not event_row:
                     return {"success": False, "message": "賽事不存在"}
