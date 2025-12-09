@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import pandas as pd
 import datetime
-import time
 from streamlit_option_menu import option_menu
 
 API_URL = "http://localhost:8000"
@@ -287,7 +286,6 @@ def player_dashboard():
                                 if send_data("deck/add_card", payload):
                                     action = "移除" if qty_edit == 0 else "更新"
                                     st.toast(f"已{action}：{sel_card_label}", icon="✅")
-                                    time.sleep(0.5) # 稍微停頓讓 toast 顯示
                                     st.rerun()
 
                 # === Tab 2: 缺卡檢測 (分析功能) ===
@@ -324,7 +322,6 @@ def player_dashboard():
                             st.success(f"牌組 {selected_deck_name} 已刪除")
                             st.rerun()
 
-# --- 修改後的卡牌查詢頁面 (app.py) ---
         elif menu == "卡牌查詢":
             st.header("卡牌篩選與查詢")
             
@@ -523,7 +520,6 @@ def player_dashboard():
                             # 呼叫後端 API
                             if send_data("player/join_event", payload):
                                 st.success(f"成功報名「{sel_event_label}」！使用牌組：「{sel_deck_name}」")
-                                time.sleep(1)
                                 st.rerun() # 重新整理以更新人數
                             else:
                                 st.error("報名失敗。可能是名額已滿，或是您已經報名過此賽事。")
@@ -540,33 +536,142 @@ def shop_dashboard():
         
         menu = option_menu(
             menu_title=None,
-            options=["庫存", "舉辦活動"],
-            icons=["boxes", "calendar-plus"],
+            options=["庫存與銷售", "舉辦活動", "銷售記錄"],
+            icons=["boxes", "calendar-plus", "table"],
             default_index=0,
         )
         
         if st.button("登出"): logout()
 
     with st.spinner(f"正在載入 {menu}..."):
-        if menu == "庫存":
-            st.header("庫存管理")
-            df = fetch_data(f"shop/{s_id}/products")
-            st.dataframe(df, width="stretch")
+        if menu == "庫存與銷售":
+            st.header("店鋪庫存與銷售管理")
+            
+            # 使用 Tabs 分流功能，讓介面不擁擠
+            tab1, tab2 = st.tabs(["銷售櫃台 (已上架)", "倉庫管理 (進貨/補貨)"])
 
-            st.divider()
-            st.subheader("上架商品")
-            all_prods = fetch_data("products_list")
-            if not all_prods.empty:
-                prod_map = dict(zip(all_prods['prod_name'], all_prods['prod_id']))
-                sel = st.selectbox("商品", all_prods['prod_name'])
-                price = st.number_input("價格", min_value=1)
-                qty = st.number_input("數量", min_value=1)
+            # --- Tab 1: 銷售櫃台 (檢視目前販售中商品) ---
+            with tab1:
+                st.subheader("架上商品列表")
+                df_shelf = fetch_data(f"shop/{s_id}/products")
                 
-                if st.button("上架"):
-                    payload = {"s_id": s_id, "prod_id": prod_map[sel], "qty": qty, "price": price}
-                    if send_data("shop/add_product", payload):
-                        st.success("上架成功")
-                        st.rerun()
+                if not df_shelf.empty:
+                    if "prod_type" in df_shelf.columns:
+                        df_shelf["display_name"] = df_shelf["prod_name"] + " (" + df_shelf["prod_type"] + ")"
+                    else:
+                        df_shelf["display_name"] = df_shelf["prod_name"]
+
+                    st.dataframe(
+                        df_shelf, 
+                        width="stretch",
+                        column_config={
+                            "prod_id": None, 
+                            "prod_name": None,
+                            "prod_type": None,
+                            "display_name": "商品名稱",
+                            "qty": "架上數量",
+                            "price": st.column_config.NumberColumn("售價", format="$%d")
+                        },
+                        hide_index=True
+                    )
+                else:
+                    st.info("目前架上空空如也，請去倉庫上架商品。")
+
+            # --- Tab 2: 倉庫管理 (核心邏輯區) ---
+            with tab2:
+                col_storage_view, col_actions = st.columns([1.5, 1])
+
+                # 1. 左側：顯示倉庫目前的庫存
+                with col_storage_view:
+                    st.subheader("倉庫庫存")
+                    df_storage = fetch_data(f"shop/{s_id}/storage")
+                    
+                    if not df_storage.empty:
+                        if "prod_type" in df_storage.columns:
+                            df_storage["display_name"] = df_storage["prod_name"] + " (" + df_storage["prod_type"] + ")"
+                        else:
+                            df_storage["display_name"] = df_storage["prod_name"]
+
+                        st.dataframe(
+                            df_storage, 
+                            width="stretch",
+                            column_config={
+                                "prod_id": None,
+                                "prod_name": None,
+                                "prod_type": None,
+                                "display_name": "商品名稱",
+                                "qty": st.column_config.NumberColumn("庫存數量", help="尚未上架的存貨")
+                            },
+                            hide_index=True
+                        )
+                    else:
+                        st.info("倉庫目前沒有任何存貨。")
+
+                # 2. 右側：操作區 (進貨 + 上架)
+                with col_actions:
+                    # --- 區塊 A: 進貨 (從外部叫貨) ---
+                    with st.expander("進貨", expanded=True):
+                        st.caption("從總商品列表加入倉庫")
+                        all_prods = fetch_data("products_list")
+                        
+                        if not all_prods.empty:
+                            if "prod_type" in all_prods.columns:
+                                all_prods['label'] = all_prods['prod_name'] + " (" + all_prods['prod_type'] + ")"
+                            else:
+                                all_prods['label'] = all_prods['prod_name']
+
+                            # 製作選單
+                            prod_map_global = dict(zip(all_prods['label'], all_prods['prod_id']))
+                            sel_prod_restock = st.selectbox("選擇進貨商品", list(prod_map_global.keys()), key="restock_sel")
+                            qty_restock = st.number_input("進貨數量", min_value=1, value=10, key="restock_qty")
+                            
+                            if st.button("確認進貨", type="secondary"):
+                                payload = {
+                                    "s_id": s_id, 
+                                    "prod_id": prod_map_global[sel_prod_restock], 
+                                    "qty": qty_restock
+                                }
+                                if send_data("shop/restock", payload):
+                                    st.toast(f"成功進貨 {qty_restock} 個 {sel_prod_restock}", icon="🚚")
+                                    st.rerun()
+
+                    st.divider()
+
+                    # --- 區塊 B: 上架 (從倉庫拿到架上) ---
+                    with st.expander("上架", expanded=True):
+                        st.caption("將倉庫存貨移動至販售區")
+                        
+                        if not df_storage.empty:
+                            # 製作選單 (只顯示倉庫有的東西)
+                            # 這裡加上庫存顯示，方便店家知道剩多少
+                            df_storage['label'] = df_storage['display_name'] + " (庫存: " + df_storage['qty'].astype(str) + ")"
+                            storage_map = dict(zip(df_storage['label'], df_storage['prod_id']))
+                            # 另外做一個 map 來查最大數量 (防呆用)
+                            qty_map = dict(zip(df_storage['prod_id'], df_storage['qty']))
+
+                            sel_label_list = st.selectbox("選擇庫存商品", list(storage_map.keys()), key="list_sel")
+                            target_prod_id = storage_map[sel_label_list]
+                            max_qty = qty_map[target_prod_id]
+
+                            col_qty, col_price = st.columns(2)
+                            with col_qty:
+                                # 限制最大值不能超過庫存
+                                qty_list = st.number_input("上架數量", min_value=1, max_value=max_qty, value=1, key="list_qty")
+                            with col_price:
+                                price_list = st.number_input("設定價格", min_value=1, value=100, key="list_price")
+
+                            if st.button("確認上架", type="primary"):
+                                payload = {
+                                    "s_id": s_id, 
+                                    "prod_id": target_prod_id, 
+                                    "qty": qty_list, 
+                                    "price": price_list
+                                }
+                                if send_data("shop/list_product", payload):
+                                    st.success(f"成功上架！")
+                                    st.rerun()
+                        else:
+                            st.warning("倉庫無貨，請先進貨。")
 
         elif menu == "舉辦活動":
             st.header("發布新賽事")
@@ -604,6 +709,9 @@ def shop_dashboard():
                     st.success("發布成功")
                 else:
                     st.error("發布失敗")
+        
+        elif menu == "銷售記錄":
+            123
 
 if __name__ == "__main__":
     if not st.session_state['logged_in']:

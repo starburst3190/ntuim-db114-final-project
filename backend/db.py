@@ -307,32 +307,96 @@ def get_shop_inventory(s_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT p."prod_name", sp."qty", sp."price"
+                SELECT p."prod_id", p."prod_name", p."prod_type", sp."qty", sp."price"
                 FROM "SHOP_SELLS_PRODUCT" sp
                 JOIN "PRODUCT" p ON sp."prod_id" = p."prod_id"
                 WHERE sp."s_id" = %s
+                ORDER BY p."prod_id"
+            """, (s_id,))
+            return cur.fetchall()
+
+def get_shop_storage(s_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT p."prod_id", p."prod_name", p."prod_type", st."qty"
+                FROM "SHOP_STORES_PRODUCT" st
+                JOIN "PRODUCT" p ON st."prod_id" = p."prod_id"
+                WHERE st."s_id" = %s AND st."qty" > 0
+                ORDER BY p."prod_id"
             """, (s_id,))
             return cur.fetchall()
 
 def get_all_products_list():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute('SELECT "prod_id", "prod_name" FROM "PRODUCT"')
+            cur.execute('SELECT "prod_id", "prod_name", "prod_type" FROM "PRODUCT"')
             return cur.fetchall()
-
-def upsert_shop_product(s_id, prod_id, qty, price):
+        
+def restock_shop_product(s_id, prod_id, qty):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute('SELECT 1 FROM "SHOP_SELLS_PRODUCT" WHERE "s_id"=%s AND "prod_id"=%s', (s_id, prod_id))
+                # 檢查倉庫是否已有此商品
+                cur.execute('SELECT 1 FROM "SHOP_STORES_PRODUCT" WHERE "s_id"=%s AND "prod_id"=%s', (s_id, prod_id))
                 if cur.fetchone():
-                    cur.execute('UPDATE "SHOP_SELLS_PRODUCT" SET "qty"=%s, "price"=%s WHERE "s_id"=%s AND "prod_id"=%s', (qty, price, s_id, prod_id))
+                    cur.execute("""
+                        UPDATE "SHOP_STORES_PRODUCT" 
+                        SET "qty" = "qty" + %s 
+                        WHERE "s_id"=%s AND "prod_id"=%s
+                    """, (qty, s_id, prod_id))
                 else:
-                    cur.execute('INSERT INTO "SHOP_SELLS_PRODUCT" ("s_id", "prod_id", "qty", "price") VALUES (%s, %s, %s, %s)', (s_id, prod_id, qty, price))
+                    cur.execute("""
+                        INSERT INTO "SHOP_STORES_PRODUCT" ("s_id", "prod_id", "qty") 
+                        VALUES (%s, %s, %s)
+                    """, (s_id, prod_id, qty))
         return True
     except Exception as e:
-        print(e)
+        print(f"Restock Error: {e}")
         return False
+
+def move_product_to_shelf(s_id, prod_id, move_qty, price):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. 檢查倉庫庫存是否足夠
+                cur.execute('SELECT "qty" FROM "SHOP_STORES_PRODUCT" WHERE "s_id"=%s AND "prod_id"=%s', (s_id, prod_id))
+                row = cur.fetchone()
+                
+                if not row:
+                    return {"success": False, "message": "倉庫中沒有此商品"}
+                
+                current_storage_qty = row['qty']
+                if current_storage_qty < move_qty:
+                    return {"success": False, "message": f"庫存不足 (目前: {current_storage_qty}, 欲上架: {move_qty})"}
+
+                # 2. 扣除倉庫數量
+                # 這裡我們保留紀錄但數量變少，若為0也可以選擇刪除，這邊選擇保留並設為剩餘量
+                cur.execute("""
+                    UPDATE "SHOP_STORES_PRODUCT" 
+                    SET "qty" = "qty" - %s 
+                    WHERE "s_id"=%s AND "prod_id"=%s
+                """, (move_qty, s_id, prod_id))
+
+                # 3. 新增或更新架上商品 (SHOP_SELLS_PRODUCT)
+                cur.execute('SELECT 1 FROM "SHOP_SELLS_PRODUCT" WHERE "s_id"=%s AND "prod_id"=%s', (s_id, prod_id))
+                if cur.fetchone():
+                    # 若架上已有，增加數量並更新價格
+                    cur.execute("""
+                        UPDATE "SHOP_SELLS_PRODUCT" 
+                        SET "qty" = "qty" + %s, "price" = %s 
+                        WHERE "s_id"=%s AND "prod_id"=%s
+                    """, (move_qty, price, s_id, prod_id))
+                else:
+                    # 若架上沒有，新增
+                    cur.execute("""
+                        INSERT INTO "SHOP_SELLS_PRODUCT" ("s_id", "prod_id", "qty", "price") 
+                        VALUES (%s, %s, %s, %s)
+                    """, (s_id, prod_id, move_qty, price))
+                return {"success": True, "message": "上架成功"}
+    except Exception as e:
+        print(f"Move to Shelf Error: {type(e).__name__}: {str(e)}")
+        return {"success": False, "message": f"系統錯誤: {type(e).__name__}: {str(e)}"}
 
 def create_event(e_name, e_format, e_date, e_time, e_size, e_round, s_id):
     try:

@@ -40,11 +40,16 @@ class JoinEventRequest(BaseModel):
     e_id: int
     d_id: int
 
-class AddProductRequest(BaseModel):
+class ListProductRequest(BaseModel):
     s_id: int
     prod_id: int
     qty: int
     price: int
+
+class RestockRequest(BaseModel):
+    s_id: int
+    prod_id: int
+    qty: int
 
 class CreateEventRequest(BaseModel):
     e_name: str
@@ -180,15 +185,27 @@ def get_missing_deck_cards(p_id: int, d_id: int):
 def get_shop_inventory(s_id: int):
     return db.get_shop_inventory(s_id)
 
+@app.get("/shop/{s_id}/storage")
+def get_shop_storage(s_id: int):
+    return db.get_shop_storage(s_id)
+
 @app.get("/products_list")
 def get_products_list():
     return db.get_all_products_list()
 
-@app.post("/shop/add_product")
-def add_shop_product(data: AddProductRequest):
-    if db.upsert_shop_product(data.s_id, data.prod_id, data.qty, data.price):
+@app.post("/shop/restock")
+def restock_shop_product(data: RestockRequest):
+    result = db.restock_shop_product(data.s_id, data.prod_id, data.qty)
+    if result is True:
         return {"status": "success"}
-    raise HTTPException(status_code=500, detail="Failed to add product")
+    raise HTTPException(status_code=400, detail="Failed to restock shop product")
+
+@app.post("/shop/list_product")
+def list_shop_product(data: ListProductRequest):
+    result = db.move_product_to_shelf(data.s_id, data.prod_id, data.qty, data.price)
+    if result["success"]:
+        return {"status": "success", "message": result["message"]}
+    raise HTTPException(status_code=400, detail=result["message"])
 
 @app.post("/shop/create_event")
 def create_event(data: CreateEventRequest):
