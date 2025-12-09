@@ -297,7 +297,6 @@ def player_dashboard():
                             missing_df = fetch_data(f"player/{p_id}/decks/{selected_d_id}/missing_cards")
                             
                             if missing_df.empty:
-                                st.balloons()
                                 st.success("太棒了！您擁有組成這副牌組的所有卡片。")
                             else:
                                 st.warning(f"這副牌組還缺少 {len(missing_df)} 種卡片：")
@@ -462,7 +461,6 @@ def player_dashboard():
                             }
                             
                             if send_data("market/buy", payload):
-                                st.balloons()
                                 st.success(f"訂單已送出！(單號已建立)")
                                 st.rerun()
 
