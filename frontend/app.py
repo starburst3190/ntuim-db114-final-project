@@ -829,7 +829,7 @@ def shop_dashboard():
 
             if not df_sales.empty:
                 # 資料前處理：確保時間格式正確，方便顯示
-                df_sales['datetime'] = pd.to_datetime(df_sales['datetime'])
+                df_sales['datetime'] = pd.to_datetime(df_sales['datetime'], format='mixed')
                 
                 # 組合顯示名稱 (讓商品名稱包含類型)
                 if "prod_type" in df_sales.columns:
