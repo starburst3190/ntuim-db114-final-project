@@ -6,39 +6,109 @@
 與此同時，玩家也在苦於清點欲組牌組缺少的卡牌，而且玩家之間的情感連結是極少的，沒有系統協助列出活動排程，經常會錯過活動，或是朋友沒到。
 
 這些問題就讓「TCG ONLINE SHOP」來解決吧！
-在「TCG ONLINE SHOP」，我們提供兩種用戶，一種是一般使用者，名為 Player，而另一種是業務經營者，名為 Shop。
-Player 端著重於收藏與互動，而 Shop 端則是商業營運、推廣兼具。
+「TCG ONLINE SHOP」是一個整合了玩家與店家的雙向平台。
+意即我們在此系統提供兩種用戶：
+- 一般使用者，名為 Player
+- 業務經營者，名為 Shop
+
+Player 端著重於收藏與互動，提供卡牌收藏管理、賽事報名等功能，而 Shop 端則是商業營運、推廣兼具，提供管理庫存、上架商品、舉辦活動等功能。
+
+## 使用者功能
+系統分為兩種角色：**Player (一般玩家)** 與 **Shop (店家/管理員)**。
+
+**Player (玩家)**
+
+**1. 帳號管理**
+- 註冊與登入：玩家可註冊個人帳號，系統將分配唯一的 `p_id`。
+
+**2. 我的收藏**
+- 登錄卡牌：玩家可將抽到的實體卡牌登錄至系統中。
+
+- 庫存管理：可隨時查看目前擁有的卡牌數量，並進行新增或刪除。
+
+**3. 牌組管理**
+- 創建牌組：玩家可建立多個牌組，並編輯牌組內的卡牌構成。
+
+- 缺卡檢測：系統會自動比對「牌組需求」與「玩家庫存」，列出該牌組目前還缺少的卡牌與數量，方便玩家補貨。
+
+**4. 卡牌查詢**
+- 多條件篩選：支援依名稱、屬性、稀有度進行複合查詢。
+
+- 搜尋紀錄：系統會自動記錄玩家的搜尋條件至 MongoDB，以利後續分析熱門關鍵字。
+
+**5. 線上商城**
+- 瀏覽商品：查看各店家上架的卡牌商品 (例如卡包)。
+
+- 購買下單：玩家可直接下單購買。交易成立後，系統會自動扣除店家庫存並將卡牌加入玩家收藏 (模擬面交情境)。
+
+**6. 賽事報名**
+- 瀏覽賽事：查看店家舉辦的近期賽事 (包含賽制、規模、日期)。
+
+- 報名/退出：選擇欲使用的牌組進行報名；若臨時有事也可取消報名釋出名額。
+
+**Shop (店家)**
+
+**1. 庫存管理**
+- 進貨：將商品從總表加入「倉庫」。
+
+- 上架：將商品從「倉庫」移動至「架上」並設定價格。系統會嚴格檢查倉庫庫存，避免超賣。
+
+**2. 舉辦活動**
+- 店家可發布新的卡牌賽事，設定賽制 (瑞士輪/淘汰賽) 與規模人數 (8/16/32/64人)。
+
+**3. 銷售記錄**
+- 交易查詢：店家可透過玩家 ID、銷售單號或商品名稱，篩選並調閱歷史銷售明細。
+
+## 系統架構
+本專案採用前後端分離架構，並實作 **SQL (PostgreSQL)** 與 **NoSQL (MongoDB)** 的混合資料庫應用。
+
+- Frontend: Streamlit
+- Backend: FastAPI
+- Database (Relational): PostgreSQL (儲存核心業務資料：使用者、卡牌、庫存、交易、賽事)
+- Database (NoSQL): MongoDB Atlas (儲存使用者搜尋紀錄)
 
 ## 使用步驟
-0. 進入專案的根目錄
-1. 從 backup 檔還原資料庫
-2. 按照 `.env.example` 的指示創建 `.env`
-3. 安裝套件
+1. 環境準備：請確保環境與 [開發環境](#開發環境) 一致，若難以達成，最低限度為 Python 版本需一致
+2. 從 backup 檔還原資料庫
+3. 按照 `.env.example` 的指示創建 `.env`
+4. 開啟專案根目錄，以下步驟皆於根目錄進行
+5. 執行以下指令安裝套件
 ```bash
 pip install -r requirements.txt
 ```
-4. 啟動後端
+6. 執行以下指令啟動後端
 ```bash
 uvicorn backend.main:app --reload
 ```
-5. 啟動前端 (此步驟會自動使用瀏覽器連線至前端)
+7. 執行以下指令啟動前端 (指令會自動使用瀏覽器連線至前端，若沒有自動跳轉，網址為 `http://localhost:8501`)
 ```bash
 streamlit run frontend/app.py
 ```
 
 ## 技術細節
+- **資料庫連線池 (Connection Pooling)**：使用 `psycopg2.pool.ThreadedConnectionPool` 管理 PostgreSQL 連線，避免頻繁建立/關閉連線造成的效能損耗，並支援多執行緒並發請求。
+- **交易管理 (Transaction Management)**： 系統針對關鍵業務邏輯實作了嚴格的交易控制 (ACID)，確保資料一致性，例如：
+    - 購買商品 (`buy_product`)：單一交易內包含「鎖定並扣除店家庫存」、「建立銷售主檔」、「建立銷售明細」、「新增玩家卡片庫存」。若任一步驟失敗，全數 Rollback。
+
+    - 商品上架 (`move_product_to_shelf`)：確保「倉庫扣除」與「架上新增」同步完成，防止庫存憑空消失或增加。
+- **混合資料庫應用**：
+    - **PostgreSQL**: 用於處理具備高度關聯性的結構化資料 (如 User, Card, Deck, Transaction)，利用 SQL 強大的 Join 能力進行複雜查詢 (e.g., 缺卡檢測)。
+
+    - **MongoDB**: 用於儲存 Search Logs。考量搜尋紀錄寫入頻繁且格式單純 (JSON document)，使用 NoSQL 可提供更好的寫入效能與欄位擴充彈性。
+- **並行控制 (Concurrency Control)**： 在購買商品時使用 `SELECT ... FOR UPDATE (Row-level locking)` 鎖定特定商品庫存，防止在高併發下發生超賣情況。
 
 ## 專案架構
 ```
 ntuim-db114-final-project/
 ├── backend/
-│   ├── main.py           # FastAPI
-│   └── db.py             # 連線至資料庫
+│   ├── main.py                # FastAPI
+│   └── db.py                  # 連線至資料庫
 ├── frontend/
-│   └── app.py            # Streamlit
-├── .env                  # 儲存環境變數 (要自己創建)
-├── .env.example          # .env 檔的範例
-├── requirements.txt      # 套件清單
+│   └── app.py                 # Streamlit
+├── .env                       # 儲存環境變數 (要自己創建)
+├── .env.example               # .env 檔的範例
+├── DBMS_final_project.backup  # 關聯式資料庫的備份檔
+├── requirements.txt           # 套件清單
 └── README.md
 ```
 
@@ -47,4 +117,4 @@ ntuim-db114-final-project/
     - Python 3.12.10
         - 套件版本由 `requirements.txt` 管理
     - PostgreSQL 17.6
-    - MongoDB Atlas (**預計，沒有用到的話改掉**)
+    - MongoDB Atlas
