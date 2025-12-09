@@ -257,15 +257,16 @@ def join_event(p_id, e_id, d_id):
                 if not event_row:
                     return {"success": False, "message": "賽事不存在"}
                 
-                e_size_str = event_row[0]
+                e_size_str = event_row['e_size']
                 limit_qty = SIZE_MAPPING.get(e_size_str)
 
                 # 2-2. 計算目前已報名人數
                 cur.execute("""
-                    SELECT COUNT(*) FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK"
-                    WHERE e_id = %s
+                    SELECT COUNT(*) AS participate_cnt
+                    FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK"
+                    WHERE "e_id" = %s
                 """, (e_id,))
-                current_qty = cur.fetchone()[0]
+                current_qty = cur.fetchone()['participate_cnt']
 
                 # 2-3. 比對 (如果 目前 >= 上限，就炸掉)
                 if current_qty >= limit_qty:
@@ -276,9 +277,29 @@ def join_event(p_id, e_id, d_id):
                 """, (p_id, e_id, d_id))
         return True
     except Exception as e:
-        print(e)
+        print(f"{type(e).__name__}: {str(e)}")
         return False
-        
+    
+def leave_event(p_id, e_id):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 1 FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK"
+                    WHERE "p_id"=%s AND "e_id"=%s
+                """, (p_id, e_id))
+                if cur.fetchone():
+                    cur.execute("""
+                        DELETE FROM "PLAYER_PARTICIPATES_EVENT_WITH_DECK"
+                        WHERE "p_id"=%s AND "e_id"=%s
+                    """, (p_id, e_id))
+                else:
+                    return {"success": False, "message": f"你沒有參加此活動"}
+        return True
+    except Exception as e:
+        print(f"{type(e).__name__}: {str(e)}")
+        return {"success": False, "message": f"退出失敗: {str(e)}"}
+
 def get_player_participations_detailed(p_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -506,7 +527,7 @@ def get_sales_detail(s_id):
             return cur.fetchall()
 
 # --- Common Features ---
-def get_all_events():
+def get_all_upcoming_events():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -514,6 +535,7 @@ def get_all_events():
                 FROM "EVENT" AS e
                 JOIN "SHOP" AS s ON e."org_shop_id" = s."s_id"
                 LEFT JOIN "PLAYER_PARTICIPATES_EVENT_WITH_DECK" AS p ON e."e_id" = p."e_id"
+                WHERE e."e_date" >= CURRENT_DATE
                 GROUP BY e."e_id", s."s_name"
             """)
             return cur.fetchall()

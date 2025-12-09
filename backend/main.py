@@ -40,6 +40,10 @@ class JoinEventRequest(BaseModel):
     e_id: int
     d_id: int
 
+class LeaveEventRequest(BaseModel):
+    p_id: int
+    e_id: int
+
 class BuyProductRequest(BaseModel):
     p_id: int
     s_id: int
@@ -169,6 +173,15 @@ def join_event(data: JoinEventRequest):
         raise HTTPException(status_code=400, detail=result["error"])
     raise HTTPException(status_code=500, detail="Failed to join event")
 
+@app.post("/player/leave_event")
+def leave_event(data: LeaveEventRequest):
+    result = db.leave_event(data.p_id, data.e_id)
+    if result is True:
+        return {"status": "success"}
+    elif isinstance(result, dict) and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    raise HTTPException(status_code=500, detail="Failed to leave event")
+
 # --- 新增：取得牌組組成 ---
 @app.get("/deck/{d_id}/composition")
 def get_deck_composition(d_id: int):
@@ -239,4 +252,4 @@ def buy_product(data: BuyProductRequest):
 
 @app.get("/events")
 def get_events():
-    return db.get_all_events()
+    return db.get_all_upcoming_events()

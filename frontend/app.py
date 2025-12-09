@@ -516,6 +516,36 @@ def player_dashboard():
                     },
                     hide_index=True
                 )
+
+                with st.expander("退出活動 / 取消報名"):
+                    if "e_name" in my_participations.columns and "e_date" in my_participations.columns:
+                        my_participations['cancel_label'] = (
+                            my_participations['e_name'] + " (" + 
+                            my_participations['e_date'].astype(str) + " " + 
+                            pd.to_datetime(my_participations['e_time']).dt.strftime('%H:%M') + ")"
+                        )
+                    else:
+                        my_participations['cancel_label'] = "活動 ID: " + my_participations['e_id'].astype(str)
+
+                    # 建立 Label -> Event ID 的對照表
+                    cancel_map = dict(zip(my_participations['cancel_label'], my_participations['e_id']))
+
+                    col_cancel_sel, col_cancel_btn = st.columns([3, 1], vertical_alignment="bottom")
+                    
+                    with col_cancel_sel:
+                        sel_cancel_label = st.selectbox("選擇要退出的賽事", list(cancel_map.keys()), key="sel_cancel_event")
+                        target_cancel_e_id = cancel_map[sel_cancel_label]
+
+                    with col_cancel_btn:
+                        if st.button("確認退出", key="btn_cancel_event", type="primary", width="stretch"):
+                            payload = {
+                                "p_id": p_id, 
+                                "e_id": target_cancel_e_id
+                            }
+                            
+                            if send_data("player/leave_event", payload):
+                                st.success(f"已取消報名：{sel_cancel_label}")
+                                st.rerun()
                 st.divider()
 
             # --- 顯示所有賽事列表 ---
