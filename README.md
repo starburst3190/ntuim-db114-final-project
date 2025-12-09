@@ -95,7 +95,7 @@ streamlit run frontend/app.py
     - **PostgreSQL**: 用於處理具備高度關聯性的結構化資料 (如 User, Card, Deck, Transaction)，利用 SQL 強大的 Join 能力進行複雜查詢 (e.g., 缺卡檢測)。
 
     - **MongoDB**: 用於儲存 Search Logs。考量搜尋紀錄寫入頻繁且格式單純 (JSON document)，使用 NoSQL 可提供更好的寫入效能與欄位擴充彈性。
-- **並行控制 (Concurrency Control)**： 在購買商品時使用 `SELECT ... FOR UPDATE (Row-level locking)` 鎖定特定商品庫存，防止在高併發下發生超賣情況。
+- **並行控制 (Concurrency Control)**： 在購買商品時使用 `SELECT ... FOR UPDATE` 鎖定特定商品庫存，防止在高併發下發生超賣情況。
 
 ## 專案架構
 ```
