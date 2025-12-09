@@ -301,6 +301,78 @@ def get_player_participations_detailed(p_id):
             """
             cur.execute(sql, (p_id,))
             return cur.fetchall()
+        
+def buy_product(p_id, s_id, prod_id, buy_qty):
+    """
+    [購買交易]
+    1. 扣除商店架上庫存
+    2. 建立銷售紀錄 (SALES + SALES_DETAIL)
+    3. (若是卡片) 將商品加入玩家庫存
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT "qty", "price" FROM "SHOP_SELLS_PRODUCT" 
+                    WHERE "s_id"=%s AND "prod_id"=%s 
+                    FOR UPDATE
+                """, (s_id, prod_id))
+                row = cur.fetchone()
+                
+                if not row:
+                    return {"success": False, "message": "商品已下架"}
+                
+                current_qty = row['qty'] if isinstance(row, dict) else row[0]
+                price = row['price'] if isinstance(row, dict) else row[1]
+                
+                if current_qty < buy_qty:
+                    return {"success": False, "message": f"庫存不足 (剩餘: {current_qty})"}
+
+                cur.execute("""
+                    UPDATE "SHOP_SELLS_PRODUCT" 
+                    SET "qty" = "qty" - %s 
+                    WHERE "s_id"=%s AND "prod_id"=%s
+                """, (buy_qty, s_id, prod_id))
+
+                import datetime
+                now = datetime.datetime.now()
+                cur.execute("""
+                    INSERT INTO "SALES" ("datetime", "p_id", "s_id") 
+                    VALUES (%s, %s, %s) 
+                    RETURNING "sales_id"
+                """, (now, p_id, s_id))
+                
+                sales_row = cur.fetchone()
+                sales_id = sales_row['sales_id'] if isinstance(sales_row, dict) else sales_row[0]
+
+                cur.execute("""
+                    INSERT INTO "SALES_DETAIL" ("sales_id", "prod_id", "qty") 
+                    VALUES (%s, %s, %s)
+                """, (sales_id, prod_id, buy_qty))
+
+                cur.execute('SELECT "c_id" FROM "PRODUCT" WHERE "prod_id"=%s', (prod_id,))
+                prod_row = cur.fetchone()
+                target_c_id = prod_row['c_id'] if isinstance(prod_row, dict) else prod_row[0]
+
+                if target_c_id:
+                    cur.execute('SELECT 1 FROM "PLAYER_HAS_CARD" WHERE "p_id"=%s AND "c_id"=%s', (p_id, target_c_id))
+                    if cur.fetchone():
+                        cur.execute("""
+                            UPDATE "PLAYER_HAS_CARD" 
+                            SET "qty" = "qty" + %s 
+                            WHERE "p_id"=%s AND "c_id"=%s
+                        """, (buy_qty, p_id, target_c_id))
+                    else:
+                        cur.execute("""
+                            INSERT INTO "PLAYER_HAS_CARD" ("p_id", "c_id", "qty") 
+                            VALUES (%s, %s, %s)
+                        """, (p_id, target_c_id, buy_qty))
+
+                return {"success": True, "message": f"訂單成立！請支付 ${price * buy_qty} 給店家"}
+
+    except Exception as e:
+        print(f"Buy Error: {e}")
+        return {"success": False, "message": f"交易失敗: {str(e)}"}
 
 # --- Shop Features (不變) ---
 def get_shop_inventory(s_id):
@@ -423,14 +495,24 @@ def get_all_events():
                 GROUP BY e."e_id", s."s_name"
             """)
             return cur.fetchall()
-
-def get_all_shop_items():
+        
+def get_market_listings():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT s."s_name", p."prod_name", sp."price", sp."qty"
+                SELECT 
+                    sp."s_id", 
+                    s."s_name", 
+                    sp."prod_id", 
+                    p."prod_name", 
+                    p."prod_type", 
+                    sp."price", 
+                    sp."qty",
+                    p."c_id"
                 FROM "SHOP_SELLS_PRODUCT" sp
-                JOIN "SHOP" s ON sp."s_id" = s."s_id"
                 JOIN "PRODUCT" p ON sp."prod_id" = p."prod_id"
+                JOIN "SHOP" s ON sp."s_id" = s."s_id"
+                WHERE sp."qty" > 0
+                ORDER BY sp."price" ASC
             """)
             return cur.fetchall()

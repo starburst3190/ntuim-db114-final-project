@@ -40,6 +40,12 @@ class JoinEventRequest(BaseModel):
     e_id: int
     d_id: int
 
+class BuyProductRequest(BaseModel):
+    p_id: int
+    s_id: int
+    prod_id: int
+    qty: int
+
 class ListProductRequest(BaseModel):
     s_id: int
     prod_id: int
@@ -213,10 +219,19 @@ def create_event(data: CreateEventRequest):
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to create event")
 
-# --- Public Routes (不變) ---
+# --- Public Routes ---
 @app.get("/market")
-def get_market_items():
-    return db.get_all_shop_items()
+def get_market_listings():
+    return db.get_market_listings()
+
+@app.post("/market/buy")
+def buy_product(data: BuyProductRequest):
+    result = db.buy_product(data.p_id, data.s_id, data.prod_id, data.qty)
+    
+    if result["success"]:
+        return {"status": "success", "message": result["message"]}
+    
+    raise HTTPException(status_code=400, detail=result["message"])
 
 @app.get("/events")
 def get_events():

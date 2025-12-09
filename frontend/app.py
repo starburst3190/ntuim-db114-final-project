@@ -376,12 +376,98 @@ def player_dashboard():
                         st.dataframe(df_results, width="stretch")
 
         elif menu == "線上商城":
-            st.header("瀏覽商城")
-            df = fetch_data("market")
-            if not df.empty:
-                st.dataframe(df, width="stretch")
+            st.header("線上卡牌商城")
+            
+            # 1. 取得資料
+            df_market = fetch_data("market")
+            
+            if not df_market.empty:
+                # 整理顯示用的欄位
+                # 組合一個唯一識別名稱供選單使用： "[店家名] 商品名 ($價格)"
+                # 這裡也要處理 prod_type
+                if "prod_type" in df_market.columns:
+                    df_market["display_name"] = df_market["prod_name"] + " (" + df_market["prod_type"] + ")"
+                else:
+                    df_market["display_name"] = df_market["prod_name"]
+
+                df_market["menu_label"] = (
+                    "[" + df_market["s_name"] + "] " + 
+                    df_market["display_name"] + 
+                    " - $" + df_market["price"].astype(str)
+                )
+
+                # 佈局：左側列表，右側購買操作
+                col_list, col_buy = st.columns([2, 1])
+
+                with col_list:
+                    st.subheader("商品一覽")
+                    st.dataframe(
+                        df_market,
+                        width="stretch",
+                        column_config={
+                            "s_id": None, "prod_id": None, "c_id": None, # 隱藏 ID
+                            "menu_label": None, "display_name": None, # 隱藏輔助欄位
+                            "s_name": "販售店家",
+                            "prod_name": "商品名稱",
+                            "prod_type": "類型",
+                            "price": st.column_config.NumberColumn("單價", format="$%d"),
+                            "qty": st.column_config.NumberColumn("庫存", help="剩餘數量")
+                        },
+                        hide_index=True,
+                        height=500
+                    )
+
+                with col_buy:
+                    with st.container(border=True):
+                        st.subheader("下單區")
+                        
+                        # 建立選單 Map: Label -> (s_id, prod_id, price, max_qty)
+                        # 這樣選了 Label 就可以知道所有需要的資訊
+                        market_map = {}
+                        for idx, row in df_market.iterrows():
+                            market_map[row['menu_label']] = {
+                                's_id': row['s_id'],
+                                'prod_id': row['prod_id'],
+                                'price': row['price'],
+                                'max_qty': row['qty'],
+                                'name': row['display_name']
+                            }
+
+                        sel_item_label = st.selectbox("選擇商品", list(market_map.keys()))
+                        
+                        # 根據選擇的商品，取得詳細資訊
+                        target_item = market_map[sel_item_label]
+                        
+                        st.info(f"您選擇了：\n**{target_item['name']}**\n\n單價：${target_item['price']}")
+                        
+                        buy_qty = st.number_input(
+                            "購買數量", 
+                            min_value=1, 
+                            max_value=target_item['max_qty'], 
+                            value=1
+                        )
+                        
+                        total_price = target_item['price'] * buy_qty
+                        st.metric("總金額", f"${total_price}")
+                        
+                        st.divider()
+                        st.caption("注意：下單後庫存將立即保留，請至店家現場付款取貨。")
+                        
+                        if st.button("確認下單", type="primary", use_container_width=True):
+                            payload = {
+                                "p_id": p_id,
+                                "s_id": target_item['s_id'],
+                                "prod_id": target_item['prod_id'],
+                                "qty": buy_qty
+                            }
+                            
+                            if send_data("market/buy", payload):
+                                st.balloons()
+                                st.success(f"訂單已送出！(單號已建立)")
+                                st.rerun()
+
             else:
-                st.info("查無商品")
+                st.info("目前商城沒有任何商品上架。")
 
         elif menu == "賽事報名":
             st.header("賽事報名中心")
